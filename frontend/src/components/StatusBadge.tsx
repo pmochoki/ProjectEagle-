@@ -1,17 +1,31 @@
-export type JobStatus = "pending" | "submitted" | "flagged" | "failed";
+export type JobStatus =
+  | "new"
+  | "queued"
+  | "applied"
+  | "needs_answer"
+  | "skipped"
+  | "failed";
 
 const styles: Record<JobStatus, { label: string; className: string }> = {
-  pending: {
-    label: "Pending",
+  new: {
+    label: "New",
+    className: "bg-sky-500/15 text-sky-200 border-sky-500/20",
+  },
+  queued: {
+    label: "Queued",
     className: "bg-white/10 text-white border-white/10",
   },
-  submitted: {
-    label: "Submitted",
+  applied: {
+    label: "Applied",
     className: "bg-emerald-500/15 text-emerald-200 border-emerald-500/20",
   },
-  flagged: {
-    label: "Flagged",
+  needs_answer: {
+    label: "Needs answer",
     className: "bg-amber-500/15 text-amber-200 border-amber-500/20",
+  },
+  skipped: {
+    label: "Skipped",
+    className: "bg-zinc-500/15 text-zinc-300 border-zinc-500/20",
   },
   failed: {
     label: "Failed",
@@ -29,4 +43,3 @@ export function StatusBadge({ status }: { status: JobStatus }) {
     </span>
   );
 }
-

@@ -3,4 +3,5 @@ uvicorn[standard]
 pydantic-settings
 python-dotenv
 playwright
+-r ../database/requirements.txt
 

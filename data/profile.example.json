@@ -1,0 +1,52 @@
+{
+  "contact": {
+    "full_name": "Your Name",
+    "email": "you@example.com",
+    "phone": "+36 00 000 0000",
+    "location": "Budapest, Hungary",
+    "linkedin_url": "https://www.linkedin.com/in/your-profile",
+    "github_url": "https://github.com/your-handle",
+    "portfolio_url": ""
+  },
+  "summary": "Brief professional summary grounded in your real experience. Replace this placeholder with your own text.",
+  "skills": {
+    "control_systems": ["PLC programming", "PID tuning"],
+    "programming": ["Python", "TypeScript", "C++"],
+    "hardware": ["Embedded systems", "Sensor integration"],
+    "cad": ["SolidWorks", "KiCad"],
+    "languages": ["English (fluent)", "Hungarian (native)"]
+  },
+  "experience": [
+    {
+      "role": "Software Engineer",
+      "company": "Example Corp",
+      "location": "Remote",
+      "start_date": "2022-01",
+      "end_date": null,
+      "is_current": true,
+      "bullets": [
+        "Built automation tooling that reduced manual workflow time by 30%.",
+        "Collaborated with cross-functional teams on production deployments."
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "name": "JobDragon",
+      "description": "Automated job discovery and application pipeline.",
+      "why_it_matters": "Demonstrates end-to-end automation, Playwright, and LLM integration skills.",
+      "github_url": "https://github.com/pmochoki/JobDragon",
+      "technologies": ["Python", "Playwright", "FastAPI", "Supabase"]
+    }
+  ],
+  "education": [
+    {
+      "institution": "Example University",
+      "degree": "BSc",
+      "field": "Computer Engineering",
+      "start_date": "2016",
+      "end_date": "2020"
+    }
+  ],
+  "qa_memory": []
+}

@@ -15,21 +15,21 @@ export default function Home() {
       role: "Full-Stack Engineer",
       location: "Remote (EU)",
       appliedAt: "2026-06-02",
-      status: "submitted",
+      status: "applied",
     },
     {
       company: "Greenfield Labs",
       role: "Backend Engineer (Python)",
       location: "Berlin, DE",
       appliedAt: "2026-06-01",
-      status: "pending",
+      status: "queued",
     },
     {
       company: "Orbit Systems",
       role: "Platform Engineer",
       location: "Amsterdam, NL",
       appliedAt: "2026-06-01",
-      status: "flagged",
+      status: "needs_answer",
     },
     {
       company: "Nimbus Corp",
@@ -43,21 +43,21 @@ export default function Home() {
   const totals = rows.reduce(
     (acc, r) => {
       acc.found += 1;
-      if (r.status === "submitted") acc.submitted += 1;
-      if (r.status === "pending") acc.pending += 1;
+      if (r.status === "applied") acc.applied += 1;
+      if (r.status === "queued" || r.status === "new") acc.queued += 1;
       if (r.status === "failed") acc.failed += 1;
-      if (r.status === "flagged") acc.flagged += 1;
+      if (r.status === "needs_answer") acc.needsAnswer += 1;
       return acc;
     },
-    { found: 0, submitted: 0, pending: 0, failed: 0, flagged: 0 },
+    { found: 0, applied: 0, queued: 0, failed: 0, needsAnswer: 0 },
   );
 
   return (
     <AppShell title="Dashboard">
       <div className="grid gap-4 md:grid-cols-4">
         <StatCard label="Jobs Found" value={totals.found} />
-        <StatCard label="Applied" value={totals.submitted} />
-        <StatCard label="Pending" value={totals.pending} />
+        <StatCard label="Applied" value={totals.applied} />
+        <StatCard label="Queued" value={totals.queued} />
         <StatCard label="Failed" value={totals.failed} />
       </div>
 
@@ -66,13 +66,13 @@ export default function Home() {
           <div>
             <div className="text-sm font-medium text-white">Applications</div>
             <div className="mt-1 text-xs text-zinc-400">
-              Dummy data for UI scaffolding. Next step: connect to API + SQLite.
+              Dummy data for UI scaffolding. Next step: connect to API + Supabase.
             </div>
           </div>
 
           <div className="flex flex-wrap gap-2">
             <span className="inline-flex items-center rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-zinc-300">
-              Flagged: {totals.flagged}
+              Needs answer: {totals.needsAnswer}
             </span>
             <span className="inline-flex items-center rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-zinc-300">
               Today: {rows.filter((r) => r.appliedAt === "2026-06-02").length}
