@@ -7,6 +7,28 @@ from database.client import get_supabase_client
 from database.models import JobInsert, JobRecord, JobStatus, _row_to_job, detect_ats_platform
 
 
+def job_to_api_dict(job: JobRecord) -> dict[str, Any]:
+    """Serialize a job for the Next.js frontend."""
+    meta = job.metadata or {}
+    return {
+        "id": job.id,
+        "title": job.title,
+        "company": job.company,
+        "location": job.location or "",
+        "description": job.description or "",
+        "linkedin_url": meta.get("linkedin_url", ""),
+        "external_apply_url": job.external_url,
+        "apply_url": job.external_url,
+        "is_easy_apply": job.is_easy_apply,
+        "status": job.status,
+        "cover_letter": meta.get("cover_letter"),
+        "scraped_at": job.date_found,
+        "applied_at": job.date_applied,
+        "ats_platform": job.ats_platform,
+        "source": job.source,
+    }
+
+
 def find_duplicate_job(
     company: str,
     title: str,
@@ -74,6 +96,14 @@ def insert_job_if_new(
     return _row_to_job(result.data[0]), "inserted"
 
 
+def get_job(job_id: str) -> JobRecord | None:
+    client = get_supabase_client()
+    result = client.table("jobs").select("*").eq("id", job_id).limit(1).execute()
+    if not result.data:
+        return None
+    return _row_to_job(result.data[0])
+
+
 def update_job_status(
     job_id: str,
     status: JobStatus,
@@ -95,15 +125,98 @@ def update_job_status(
     return _row_to_job(result.data)
 
 
+def update_job_cover_letter(job_id: str, cover_letter: str) -> JobRecord:
+    job = get_job(job_id)
+    if not job:
+        raise RuntimeError(f"Job not found: {job_id}")
+
+    metadata = dict(job.metadata or {})
+    metadata["cover_letter"] = cover_letter
+
+    client = get_supabase_client()
+    result = (
+        client.table("jobs")
+        .update({"metadata": metadata})
+        .eq("id", job_id)
+        .select("*")
+        .single()
+        .execute()
+    )
+    if not result.data:
+        raise RuntimeError(f"Failed to update cover letter for job: {job_id}")
+    return _row_to_job(result.data)
+
+
 def list_jobs(
     *,
     status: JobStatus | None = None,
+    external_only: bool = True,
     limit: int = 100,
 ) -> list[JobRecord]:
     client = get_supabase_client()
     query = client.table("jobs").select("*").order("date_found", desc=True).limit(limit)
     if status:
         query = query.eq("status", status)
+    if external_only:
+        query = query.eq("is_easy_apply", False)
 
     result = query.execute()
     return [_row_to_job(row) for row in (result.data or [])]
+
+
+def get_stats() -> dict[str, int]:
+    client = get_supabase_client()
+    result = (
+        client.table("jobs")
+        .select("status, is_easy_apply, metadata")
+        .eq("is_easy_apply", False)
+        .execute()
+    )
+    rows = result.data or []
+
+    stats = {
+        "found": len(rows),
+        "applied": 0,
+        "pending": 0,
+        "failed": 0,
+        "needs_answer": 0,
+        "with_cover_letter": 0,
+    }
+    for row in rows:
+        status = row.get("status")
+        if status == "applied":
+            stats["applied"] += 1
+        elif status in ("new", "queued"):
+            stats["pending"] += 1
+        elif status == "failed":
+            stats["failed"] += 1
+        elif status == "needs_answer":
+            stats["needs_answer"] += 1
+
+        meta = row.get("metadata") or {}
+        if meta.get("cover_letter"):
+            stats["with_cover_letter"] += 1
+
+    return stats
+
+
+def save_scraped_jobs(jobs: list[Any]) -> int:
+    """Insert scraped jobs via Supabase dedup logic. Returns count inserted."""
+    inserted = 0
+    for scraped in jobs:
+        job_insert = JobInsert(
+            source="linkedin",
+            title=scraped.title,
+            company=scraped.company,
+            external_url=scraped.external_apply_url,
+            location=scraped.location,
+            description=scraped.description,
+            is_easy_apply=scraped.is_easy_apply,
+            metadata={
+                "linkedin_url": scraped.linkedin_url,
+            },
+        )
+        _, outcome = insert_job_if_new(job_insert)
+        if outcome == "inserted":
+            inserted += 1
+    return inserted

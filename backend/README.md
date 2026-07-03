@@ -1,6 +1,6 @@
-# JobDragon Backend
+# JantaSearcher Backend
 
-FastAPI server for JobDragon. Keep all secrets and third-party API calls here (Claude, LinkedIn automation control, Telegram).
+FastAPI server for JantaSearcher. Keep all secrets and third-party API calls here (Claude, LinkedIn automation control, Telegram).
 
 ## Run
 

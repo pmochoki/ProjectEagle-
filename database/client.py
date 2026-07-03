@@ -24,7 +24,9 @@ def _require_env(name: str) -> str:
 
 @lru_cache(maxsize=1)
 def get_supabase_client() -> Client:
-    """Return a cached Supabase client using the service role key (backend only)."""
+    """Return a cached Supabase client (service role preferred, anon fallback)."""
     url = _require_env("SUPABASE_URL")
-    key = _require_env("SUPABASE_SERVICE_ROLE_KEY")
+    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip() or _require_env(
+        "SUPABASE_ANON_KEY"
+    )
     return create_client(url, key)

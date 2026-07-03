@@ -1,2 +1,2 @@
-"""JobDragon scraper package."""
+"""JantaSearcher scraper package."""
 

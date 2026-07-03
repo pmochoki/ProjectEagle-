@@ -1,73 +1,80 @@
-# JobDragon
+# JantaSearcher (JobDragon)
 
-Automated job discovery and application system.
+Automated job discovery and application assistant — scrape **external-apply** LinkedIn jobs, generate AI cover letters from your profile, and get Telegram alerts.
 
-## Architecture
+**GitHub:** [github.com/pmochoki/Jantasearcher](https://github.com/pmochoki/Jantasearcher)  
+**Database:** Supabase project `Jantasearcher` (`twojjtkqifmscxvrettm`)
 
-1. **Discovery** (LinkedIn + HU job boards) — browse-only, extract external apply URLs. Never Easy Apply.
-2. **Application** (company ATS sites) — register, fill forms, upload tailored docs, submit.
+## What it does
+
+1. **Scrape LinkedIn** — Playwright login, search jobs, save only roles with **Apply on company website** (skips Easy Apply).
+2. **Supabase storage** — jobs, Q&A memory, and profile data with fuzzy dedup.
+3. **AI cover letters** — Claude tailors cover letters from `data/profile.json` (never invents experience).
+4. **Telegram alerts** — scrape summaries, new jobs, cover letter ready.
 
 ## Tech
 
 - Frontend: Next.js + Tailwind
 - Backend: FastAPI (Python)
-- DB: Supabase (Postgres)
-- Automation: Playwright (Python)
+- DB: **Supabase** (Postgres)
+- Automation: Playwright
 - AI: Claude API (Anthropic)
 - Notifications: Telegram Bot API
 
 ## Repo layout
 
-- `frontend/`: Next.js app (UI)
-- `backend/`: FastAPI server (API + secrets)
-- `scraper/`: LinkedIn scraper (Playwright)
-- `database/`: Supabase client + job/Q&A helpers
-- `supabase/`: SQL migrations and local CLI config
-- `data/`: Profile JSON schema + example
-- `applier/`: Auto-apply + ATS handlers (pending)
-- `ai/`: CV tailoring + cover letter modules (pending)
-- `notifications/`: Telegram bot (pending)
-
-## Build phases
-
-| Phase | Status |
-|-------|--------|
-| 1. Supabase schema | Done |
-| 2. Profile loader + Claude API test | Done |
-| 3. LinkedIn session module | Pending |
-| 4. Greenhouse ATS filler | Pending |
-| 5. Telegram bot + Q&A memory | Pending |
-| 6. Lever + more ATS | Pending |
-| 7. HU job board scrapers | Pending |
-| 8. Review-queue mode | Pending |
+- `frontend/` — Next.js dashboard, jobs list, cover letter UI
+- `backend/` — FastAPI API
+- `scraper/` — LinkedIn scraper (external apply only)
+- `database/` — Supabase client + job/Q&A helpers
+- `ai/` — Claude tailoring module
+- `notifications/` — Telegram bot helpers
+- `supabase/` — SQL migrations
+- `data/` — Profile JSON schema + example
 
 ## Setup
 
-### 1. Supabase
-
-Apply `supabase/migrations/20250703000000_initial_schema.sql` to your Supabase project (SQL Editor or `supabase db reset` locally). See `supabase/README.md`.
-
-### 2. Environment
+### 1. Environment
 
 ```bash
 cp .env.example .env
 cp data/profile.example.json data/profile.json
 ```
 
-Fill in `.env`:
+Edit `.env`:
 
 | Variable | Where to get it |
 |----------|-----------------|
 | `SUPABASE_URL` | Supabase → Settings → API → Project URL |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Settings → API → service_role (secret) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Settings → API → `service_role` (secret, backend only) |
 | `SUPABASE_ANON_KEY` | Supabase → Settings → API → anon public |
+| `LINKEDIN_EMAIL` / `LINKEDIN_PASSWORD` | Secondary LinkedIn account recommended |
 | `CLAUDE_API_KEY` | [console.anthropic.com](https://console.anthropic.com/) |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | [@BotFather](https://t.me/BotFather) (optional) |
 
 Never commit `.env` or expose `SUPABASE_SERVICE_ROLE_KEY` in the frontend.
 
-Fill in Supabase URL/keys, LinkedIn credentials, Claude API key, and Telegram tokens as needed.
+### 2. Supabase schema
 
-### 3. Frontend
+Schema is already applied on the remote `Jantasearcher` project. To re-apply locally or on a new project, run `supabase/migrations/20250703000000_initial_schema.sql` in the SQL Editor.
+
+### 3. Backend
+
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+playwright install chromium
+PYTHONPATH=.. uvicorn app.main:app --reload --port 8000
+```
+
+Verify:
+- `GET http://localhost:8000/db/health`
+- `GET http://localhost:8000/profile`
+- `POST http://localhost:8000/ai/test-tailor` (needs `CLAUDE_API_KEY`)
+
+### 4. Frontend
 
 ```bash
 cd frontend
@@ -75,28 +82,44 @@ npm install
 npm run dev
 ```
 
-### 4. Backend
+Open http://localhost:3000
+
+### 5. Run scraper
+
+From the dashboard **Run scraper** button, or:
 
 ```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+POST http://localhost:8000/scraper/run
 ```
 
-Verify DB connectivity: `GET http://localhost:8000/db/health`
+## API endpoints
 
-Verify Claude (needs `CLAUDE_API_KEY`): `POST http://localhost:8000/ai/test-tailor`
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/health` | Health check |
+| GET | `/db/health` | Supabase connectivity |
+| GET | `/stats` | Dashboard counts |
+| GET | `/jobs` | List external-apply jobs |
+| GET | `/jobs/{id}` | Single job |
+| POST | `/jobs/{id}/cover-letter` | Generate + save cover letter |
+| PATCH | `/jobs/{id}/status` | Update job status |
+| POST | `/scraper/run` | Run LinkedIn scraper |
+| GET | `/profile` | Profile JSON loaded |
+| POST | `/ai/test-tailor` | Test Claude tailoring |
 
-## Profile data
+## Build phases
 
-Copy the example profile and edit with your real details:
+| Phase | Status |
+|-------|--------|
+| 1. Supabase schema | Done |
+| 2. Profile loader + Claude API | Done |
+| 3. LinkedIn scraper → Supabase | Done |
+| 4. Dashboard + jobs UI | Done |
+| 5. Greenhouse ATS filler | Pending |
+| 6. HU job board scrapers | Pending |
 
-```bash
-cp data/profile.example.json data/profile.json
-```
+## Notes
 
-`data/profile.json` is gitignored. Schema: `data/profile.schema.json`.
-
-Verify profile loads: `GET http://localhost:8000/profile`
+- LinkedIn may show CAPTCHAs — scraper pauses and saves partial results.
+- Use a VPN, low daily caps, and human-like delays (`SCRAPER_DELAY_*`).
+- External apply URLs open the company's careers site; auto-submit is not in v1.

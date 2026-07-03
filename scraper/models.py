@@ -9,6 +9,6 @@ class ScrapedJob:
     company: str
     location: str
     description: str
-    apply_url: str
+    linkedin_url: str
+    external_apply_url: str
     is_easy_apply: bool
-

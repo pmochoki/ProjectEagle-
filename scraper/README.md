@@ -1,4 +1,4 @@
-# JobDragon Scraper (Step 3)
+# JantaSearcher Scraper (Step 3)
 
 Playwright-based LinkedIn job scraper that:
 
@@ -7,7 +7,7 @@ Playwright-based LinkedIn job scraper that:
 - Iterates through pagination up to `SCRAPER_MAX_PAGES`
 - Scrapes title/company/location/description/apply URL
 - Detects Easy Apply button presence
-- Saves jobs into SQLite (`database/jobdragon.db`)
+- Saves jobs into SQLite (`database/jantasearcher.db`)
 - Detects CAPTCHA/security checks and pauses
 - Uses randomized delays between actions (default 3-15 seconds)
 
