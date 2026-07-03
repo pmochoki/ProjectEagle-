@@ -4,4 +4,5 @@ pydantic-settings
 python-dotenv
 playwright
 -r ../database/requirements.txt
+-r ../ai/requirements.txt
 

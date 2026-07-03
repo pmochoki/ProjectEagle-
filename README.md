@@ -33,7 +33,7 @@ Automated job discovery and application system.
 | Phase | Status |
 |-------|--------|
 | 1. Supabase schema | Done |
-| 2. Profile loader + Claude API test | Pending |
+| 2. Profile loader + Claude API test | Done |
 | 3. LinkedIn session module | Pending |
 | 4. Greenhouse ATS filler | Pending |
 | 5. Telegram bot + Q&A memory | Pending |
@@ -53,6 +53,17 @@ Apply `supabase/migrations/20250703000000_initial_schema.sql` to your Supabase p
 cp .env.example .env
 cp data/profile.example.json data/profile.json
 ```
+
+Fill in `.env`:
+
+| Variable | Where to get it |
+|----------|-----------------|
+| `SUPABASE_URL` | Supabase → Settings → API → Project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Settings → API → service_role (secret) |
+| `SUPABASE_ANON_KEY` | Supabase → Settings → API → anon public |
+| `CLAUDE_API_KEY` | [console.anthropic.com](https://console.anthropic.com/) |
+
+Never commit `.env` or expose `SUPABASE_SERVICE_ROLE_KEY` in the frontend.
 
 Fill in Supabase URL/keys, LinkedIn credentials, Claude API key, and Telegram tokens as needed.
 
@@ -76,6 +87,16 @@ uvicorn app.main:app --reload --port 8000
 
 Verify DB connectivity: `GET http://localhost:8000/db/health`
 
+Verify Claude (needs `CLAUDE_API_KEY`): `POST http://localhost:8000/ai/test-tailor`
+
 ## Profile data
 
-Edit `data/profile.json` (gitignored). Schema: `data/profile.schema.json`. Used by the Claude content layer in Phase 2+.
+Copy the example profile and edit with your real details:
+
+```bash
+cp data/profile.example.json data/profile.json
+```
+
+`data/profile.json` is gitignored. Schema: `data/profile.schema.json`.
+
+Verify profile loads: `GET http://localhost:8000/profile`
