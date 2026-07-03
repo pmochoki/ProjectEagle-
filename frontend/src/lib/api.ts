@@ -84,6 +84,30 @@ export async function runScraper(): Promise<void> {
   await apiFetch("/scraper/run", { method: "POST" });
 }
 
+export async function runProfessionScraper(): Promise<void> {
+  await apiFetch("/scraper/profession", { method: "POST" });
+}
+
+export async function runCanary(): Promise<void> {
+  await apiFetch("/scraper/canary", { method: "POST" });
+}
+
+export async function applyToJob(jobId: string): Promise<{ outcome: string; message: string }> {
+  const data = await apiFetch<{ result: { outcome: string; message: string } }>(
+    `/jobs/${jobId}/apply`,
+    { method: "POST" },
+  );
+  return data.result;
+}
+
+export async function approveJob(jobId: string): Promise<{ outcome: string; message: string }> {
+  const data = await apiFetch<{ result: { outcome: string; message: string } }>(
+    `/jobs/${jobId}/approve`,
+    { method: "POST" },
+  );
+  return data.result;
+}
+
 export interface AiHealth {
   ok: boolean;
   configured: boolean;

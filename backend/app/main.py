@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from pathlib import Path
 import sys
 
@@ -9,8 +10,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.append(str(PROJECT_ROOT))
 
+from ai.answers import generate_application_answer  # noqa: E402
 from ai.client import ClaudeConfigError  # noqa: E402
 from ai.tailor import SAMPLE_JOB, tailor_for_job  # noqa: E402
+from ats.runner import apply_to_job, submit_after_review  # noqa: E402
 from database.client import SupabaseConfigError, get_supabase_client  # noqa: E402
 from database.jobs import (  # noqa: E402
     get_job,
@@ -22,11 +25,24 @@ from database.jobs import (  # noqa: E402
 )
 from database.models import JobStatus  # noqa: E402
 from database.profile import ProfileError, load_profile  # noqa: E402
+from database.qa_memory import find_qa_answer, store_qa_answer  # noqa: E402
+from notifications.telegram import send_daily_summary  # noqa: E402
+from notifications.telegram_bot import start_telegram_bot_background, stop_telegram_bot  # noqa: E402
 from notifications.telegram import notify_cover_letter_ready  # noqa: E402
-from scraper.config import ScraperConfig  # noqa: E402
+from scraper.canary import run_all_canaries_sync  # noqa: E402
+from scraper.config import ScraperConfig, review_before_submit  # noqa: E402
 from scraper.linkedin_scraper import run_scraper_sync  # noqa: E402
+from scraper.profession_hu import run_profession_scraper_sync  # noqa: E402
 
-app = FastAPI(title="JantaSearcher API")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    start_telegram_bot_background()
+    yield
+    stop_telegram_bot()
+
+
+app = FastAPI(title="JantaSearcher API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -51,9 +67,28 @@ class JobDescriptionInput(BaseModel):
     )
 
 
+class AnswerInput(BaseModel):
+    question: str
+    job_id: str | None = None
+
+
+class QaStoreInput(BaseModel):
+    question_text: str
+    answer_text: str
+    job_id_first_asked: str | None = None
+
+
 @app.get("/health")
 def health():
     return {"ok": True}
+
+
+@app.get("/config")
+def get_config():
+    return {
+        "review_before_submit": review_before_submit(),
+        "scraper_public_mode": ScraperConfig.from_env().public_mode,
+    }
 
 
 @app.get("/db/health")
@@ -95,7 +130,6 @@ def ai_health():
 
 @app.post("/ai/test-tailor")
 def test_tailor(job: JobDescriptionInput | None = None):
-    """Send profile + job description to Claude; returns tailored resume and cover letter."""
     try:
         profile = load_profile()
     except ProfileError as exc:
@@ -121,12 +155,64 @@ def test_tailor(job: JobDescriptionInput | None = None):
         raise HTTPException(status_code=500, detail=f"Claude tailoring failed: {exc}") from exc
 
 
+@app.post("/ai/answer")
+def ai_answer(body: AnswerInput):
+    try:
+        profile = load_profile()
+    except ProfileError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    job_ctx = None
+    if body.job_id:
+        job = get_job(body.job_id)
+        if job:
+            job_ctx = {
+                "title": job.title,
+                "company": job.company,
+                "description": job.description or "",
+            }
+
+    try:
+        answer = generate_application_answer(body.question, profile, job=job_ctx)
+    except ClaudeConfigError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return {"ok": True, "answer": answer}
+
+
+@app.get("/qa/lookup")
+def qa_lookup(question: str = Query(..., min_length=3)):
+    from ai.qa_match import find_semantic_qa_answer
+
+    hit = find_semantic_qa_answer(question)
+    return {"ok": True, "match": hit}
+
+
+@app.post("/qa/store")
+def qa_store(body: QaStoreInput):
+    record = store_qa_answer(
+        body.question_text,
+        body.answer_text,
+        job_id_first_asked=body.job_id_first_asked,
+    )
+    return {"ok": True, "record": record}
+
+
 @app.get("/stats")
 def stats():
     try:
         return get_stats()
     except SupabaseConfigError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/telegram/daily-summary")
+def trigger_daily_summary():
+    stats_data = get_stats()
+    send_daily_summary(stats_data)
+    return {"ok": True, "stats": stats_data}
 
 
 @app.get("/jobs")
@@ -185,6 +271,30 @@ def create_cover_letter(job_id: str):
     return {"ok": True, "cover_letter": letter}
 
 
+@app.post("/jobs/{job_id}/apply")
+def apply_job(job_id: str, force_submit: bool = Query(default=False)):
+    try:
+        if not get_job(job_id):
+            raise HTTPException(status_code=404, detail="Job not found")
+        result = apply_to_job(job_id, force_submit=force_submit)
+        return {"ok": True, "result": result}
+    except ProfileError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/jobs/{job_id}/approve")
+async def approve_job(job_id: str):
+    try:
+        if not get_job(job_id):
+            raise HTTPException(status_code=404, detail="Job not found")
+        result = await submit_after_review(job_id)
+        return {"ok": True, "result": {"outcome": result.outcome, "message": result.message}}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @app.patch("/jobs/{job_id}/status")
 def patch_job_status(job_id: str, body: StatusUpdate):
     allowed: set[JobStatus] = {
@@ -220,3 +330,25 @@ def run_scraper():
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:  # pragma: no cover
         raise HTTPException(status_code=500, detail=f"Scraper run failed: {exc}") from exc
+
+
+@app.post("/scraper/profession")
+def run_profession():
+    try:
+        cfg = ScraperConfig.from_env()
+        result = run_profession_scraper_sync(cfg)
+        return {"ok": True, "result": result}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/scraper/canary")
+def run_canary():
+    try:
+        cfg = ScraperConfig.from_env()
+        results = run_all_canaries_sync(cfg)
+        return {"ok": True, "results": results}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import random
+import re
 from dataclasses import asdict, dataclass
+from datetime import date, timedelta
 from urllib.parse import quote_plus
 
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
@@ -12,6 +14,7 @@ from database.jobs import save_scraped_jobs
 from notifications.telegram import notify_new_jobs, notify_scrape_complete
 from scraper.config import ScraperConfig
 from scraper.models import ScrapedJob
+from scraper.session import load_session_context, save_session
 
 
 @dataclass
@@ -22,20 +25,50 @@ class ScrapeResult:
     captcha_detected: bool
     pages_visited: int
     message: str
+    public_mode: bool
 
 
 async def _human_delay(cfg: ScraperConfig) -> None:
     await asyncio.sleep(random.uniform(cfg.delay_min_seconds, cfg.delay_max_seconds))
 
 
+def _date_posted_filter(code: str) -> str:
+    """LinkedIn f_TPR filter codes."""
+    mapping = {
+        "past_24_hours": "r86400",
+        "past_week": "r604800",
+        "past_month": "r2592000",
+        "any": "",
+    }
+    return mapping.get(code, "r604800")
+
+
+def _experience_filter(code: str) -> str:
+    mapping = {
+        "internship": "1",
+        "entry": "2",
+        "associate": "3",
+        "mid": "4",
+        "director": "5",
+        "executive": "6",
+    }
+    return mapping.get(code, "")
+
+
 def _build_search_url(cfg: ScraperConfig) -> str:
     keywords = quote_plus(cfg.job_title)
     location = quote_plus(cfg.location)
-    # No f_AL filter — we want all jobs, then keep external-apply only.
-    return (
-        "https://www.linkedin.com/jobs/search/?"
-        f"keywords={keywords}&location={location}"
-    )
+    parts = [
+        "https://www.linkedin.com/jobs/search/?",
+        f"keywords={keywords}&location={location}",
+    ]
+    tpr = _date_posted_filter(cfg.date_posted)
+    if tpr:
+        parts.append(f"&f_TPR={tpr}")
+    exp = _experience_filter(cfg.experience_level)
+    if exp:
+        parts.append(f"&f_E={exp}")
+    return "".join(parts)
 
 
 async def _detect_captcha(page) -> bool:
@@ -45,6 +78,44 @@ async def _detect_captcha(page) -> bool:
         or "security verification" in body_text
         or "let's do a quick security check" in body_text
     )
+
+
+def _parse_relative_posted(text: str) -> date | None:
+    t = text.lower()
+    today = date.today()
+    if "just now" in t or "today" in t:
+        return today
+    m = re.search(r"(\d+)\s*(minute|hour|day|week|month)", t)
+    if not m:
+        return None
+    n = int(m.group(1))
+    unit = m.group(2)
+    if unit == "minute" or unit == "hour":
+        return today
+    if unit == "day":
+        return today - timedelta(days=n)
+    if unit == "week":
+        return today - timedelta(weeks=n)
+    if unit == "month":
+        return today - timedelta(days=n * 30)
+    return None
+
+
+async def _extract_posted_date(page) -> date | None:
+    selectors = [
+        ".job-details-jobs-unified-top-card__primary-description-container",
+        ".job-details-jobs-unified-top-card__bullet",
+        "span.posted-time-ago__text",
+    ]
+    for selector in selectors:
+        loc = page.locator(selector)
+        if await loc.count() == 0:
+            continue
+        text = (await loc.first.inner_text(timeout=1500)).strip()
+        parsed = _parse_relative_posted(text)
+        if parsed:
+            return parsed
+    return None
 
 
 async def _extract_external_apply_url(page) -> str:
@@ -116,6 +187,7 @@ async def _extract_jobs_on_page(page) -> tuple[list[ScrapedJob], int]:
             else ""
         )
 
+        posted_date = await _extract_posted_date(page)
         linkedin_url = page.url
         external_apply_url = await _extract_external_apply_url(page)
 
@@ -132,9 +204,28 @@ async def _extract_jobs_on_page(page) -> tuple[list[ScrapedJob], int]:
                 linkedin_url=linkedin_url,
                 external_apply_url=external_apply_url,
                 is_easy_apply=False,
+                posted_date=posted_date,
             )
         )
     return jobs, skipped_easy_apply
+
+
+async def _login_if_needed(page, cfg: ScraperConfig) -> bool:
+    """Returns False if CAPTCHA blocked login."""
+    await page.goto("https://www.linkedin.com/login", wait_until="domcontentloaded")
+    await _human_delay(cfg)
+
+    if await page.locator("#username").count() == 0:
+        return True
+
+    await page.fill("#username", cfg.linkedin_email)
+    await _human_delay(cfg)
+    await page.fill("#password", cfg.linkedin_password)
+    await _human_delay(cfg)
+    await page.click("button[type='submit']")
+    await page.wait_for_load_state("domcontentloaded")
+    await _human_delay(cfg)
+    return not await _detect_captcha(page)
 
 
 async def run_scraper(cfg: ScraperConfig) -> ScrapeResult:
@@ -147,32 +238,27 @@ async def run_scraper(cfg: ScraperConfig) -> ScrapeResult:
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=cfg.headless, slow_mo=75)
-        context = await browser.new_context()
+        context = await load_session_context(browser, headless=cfg.headless)
         page = await context.new_page()
 
-        await page.goto("https://www.linkedin.com/login", wait_until="domcontentloaded")
-        await _human_delay(cfg)
-
-        await page.fill("#username", cfg.linkedin_email)
-        await _human_delay(cfg)
-        await page.fill("#password", cfg.linkedin_password)
-        await _human_delay(cfg)
-        await page.click("button[type='submit']")
-        await page.wait_for_load_state("domcontentloaded")
-        await _human_delay(cfg)
-
-        if await _detect_captcha(page):
-            await browser.close()
-            return ScrapeResult(
-                found=0,
-                inserted=0,
-                skipped_easy_apply=0,
-                captcha_detected=True,
-                pages_visited=0,
-                message="CAPTCHA detected during login; scraper paused.",
-            )
-
-        await page.goto(_build_search_url(cfg), wait_until="domcontentloaded")
+        if cfg.public_mode:
+            await page.goto(_build_search_url(cfg), wait_until="domcontentloaded")
+            await _human_delay(cfg)
+        else:
+            logged_in = await _login_if_needed(page, cfg)
+            if not logged_in:
+                await browser.close()
+                return ScrapeResult(
+                    found=0,
+                    inserted=0,
+                    skipped_easy_apply=0,
+                    captcha_detected=True,
+                    pages_visited=0,
+                    message="CAPTCHA detected during login; scraper paused.",
+                    public_mode=False,
+                )
+            await save_session(context)
+            await page.goto(_build_search_url(cfg), wait_until="domcontentloaded")
 
         for _ in range(cfg.max_pages):
             pages_visited += 1
@@ -195,18 +281,21 @@ async def run_scraper(cfg: ScraperConfig) -> ScrapeResult:
             except PlaywrightTimeoutError:
                 break
 
+        if not cfg.public_mode:
+            await save_session(context)
         await browser.close()
 
     inserted = save_scraped_jobs(found_jobs)
     msg = f"Scrape completed. {inserted} new external-apply jobs saved."
     if captcha_detected:
-        msg = "CAPTCHA detected; run paused and partial results saved."
+        msg = "CAPTCHA detected; run paused and partial results saved. Solve manually in browser, then retry."
 
     notify_scrape_complete(
         found=len(found_jobs),
         inserted=inserted,
         skipped_easy_apply=skipped_easy_apply,
         captcha=captcha_detected,
+        source="LinkedIn",
     )
     if found_jobs:
         notify_new_jobs(found_jobs[:10])
@@ -218,6 +307,7 @@ async def run_scraper(cfg: ScraperConfig) -> ScrapeResult:
         captcha_detected=captcha_detected,
         pages_visited=pages_visited,
         message=msg,
+        public_mode=cfg.public_mode,
     )
 
 

@@ -7,6 +7,8 @@ import {
   fetchJobs,
   generateCoverLetter,
   updateJobStatus,
+  applyToJob,
+  approveJob,
   type Job,
 } from "@/lib/api";
 
@@ -16,6 +18,7 @@ export default function JobsPage() {
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [generatingId, setGeneratingId] = useState<string | null>(null);
+  const [applyingId, setApplyingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -46,6 +49,35 @@ export default function JobsPage() {
       setError(e instanceof Error ? e.message : "Cover letter failed");
     } finally {
       setGeneratingId(null);
+    }
+  }
+
+  async function handleApply(jobId: string) {
+    setApplyingId(jobId);
+    setError(null);
+    try {
+      const result = await applyToJob(jobId);
+      await load();
+      if (result.outcome === "review_pending") {
+        setError(`Form filled — approve in Telegram: /approve ${jobId}`);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Apply failed");
+    } finally {
+      setApplyingId(null);
+    }
+  }
+
+  async function handleApprove(jobId: string) {
+    setApplyingId(jobId);
+    setError(null);
+    try {
+      await approveJob(jobId);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Approve failed");
+    } finally {
+      setApplyingId(null);
     }
   }
 
@@ -136,6 +168,24 @@ export default function JobsPage() {
                         >
                           View on LinkedIn
                         </a>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleApply(job.id)}
+                        disabled={applyingId === job.id}
+                        className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-50"
+                      >
+                        {applyingId === job.id ? "Applying…" : "Auto-apply (ATS)"}
+                      </button>
+                      {job.status === "queued" && (
+                        <button
+                          type="button"
+                          onClick={() => handleApprove(job.id)}
+                          disabled={applyingId === job.id}
+                          className="rounded-xl border border-violet-500/40 px-4 py-2 text-sm text-violet-200 hover:bg-violet-500/10 disabled:opacity-50"
+                        >
+                          Approve submit
+                        </button>
                       )}
                       <button
                         type="button"

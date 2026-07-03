@@ -1,125 +1,121 @@
 # JantaSearcher
 
-Automated job discovery and application assistant — scrape **external-apply** LinkedIn jobs, generate AI cover letters from your profile, and get Telegram alerts.
+Automated job discovery and application assistant — scrape **external-apply** jobs, generate AI cover letters, auto-fill Greenhouse/Lever forms, and manage applications via Telegram.
 
 **GitHub:** [github.com/pmochoki/Jantasearcher](https://github.com/pmochoki/Jantasearcher)  
 **Database:** Supabase project `Jantasearcher` (`twojjtkqifmscxvrettm`)
 
-## What it does
+## Pipeline
 
-1. **Scrape LinkedIn** — Playwright login, search jobs, save only roles with **Apply on company website** (skips Easy Apply).
-2. **Supabase storage** — jobs, Q&A memory, and profile data with fuzzy dedup.
-3. **AI cover letters** — Claude tailors cover letters from `data/profile.json` (never invents experience).
-4. **Telegram alerts** — scrape summaries, new jobs, cover letter ready.
+1. **Discover** — LinkedIn (logged-in or public mode) + profession.hu → Supabase with fuzzy dedup
+2. **Tailor** — Claude generates cover letters + resume text from `data/profile.json` (no fabrication)
+3. **Apply** — Greenhouse / Lever Playwright fillers; file uploads via `<input type="file">`
+4. **Q&A** — Semantic memory bank (pg_trgm + Claude) + Telegram `/answer` for unknown questions
+5. **Safety** — `REVIEW_BEFORE_SUBMIT=true` by default; CAPTCHA → pause + notify (no bypass)
+6. **Canary** — DOM selector health checks with Telegram alerts (`POST /scraper/canary` or cron)
 
 ## Tech
 
 - Frontend: Next.js + Tailwind
 - Backend: FastAPI (Python)
-- DB: **Supabase** (Postgres)
+- DB: Supabase (Postgres)
 - Automation: Playwright
 - AI: Claude API (Anthropic)
-- Notifications: Telegram Bot API
+- Notifications: Telegram Bot API (outbound + inbound commands)
 
 ## Repo layout
 
-- `frontend/` — Next.js dashboard, jobs list, cover letter UI
-- `backend/` — FastAPI API
-- `scraper/` — LinkedIn scraper (external apply only)
-- `database/` — Supabase client + job/Q&A helpers
-- `ai/` — Claude tailoring module
-- `notifications/` — Telegram bot helpers
-- `supabase/` — SQL migrations
-- `data/` — Profile JSON schema + example
+| Path | Purpose |
+|------|---------|
+| `frontend/` | Dashboard, jobs, apply UI |
+| `backend/` | FastAPI API |
+| `scraper/` | LinkedIn, profession.hu, session, canary |
+| `ats/` | Greenhouse + Lever fillers, apply runner |
+| `ai/` | Tailoring, answers, semantic Q&A match |
+| `database/` | Supabase client + jobs/Q&A |
+| `notifications/` | Telegram alerts + bot polling |
+| `data/` | Profile JSON, LinkedIn session (gitignored) |
 
 ## Setup
-
-### 1. Environment
 
 ```bash
 cp .env.example .env
 cp data/profile.example.json data/profile.json
 ```
 
-Edit `.env`:
+Key `.env` variables:
 
-| Variable | Where to get it |
-|----------|-----------------|
-| `SUPABASE_URL` | Supabase → Settings → API → Project URL |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Settings → API → `service_role` (secret, backend only) |
-| `SUPABASE_ANON_KEY` | Supabase → Settings → API → anon public |
-| `LINKEDIN_EMAIL` / `LINKEDIN_PASSWORD` | Secondary LinkedIn account recommended |
-| `CLAUDE_API_KEY` | [console.anthropic.com](https://console.anthropic.com/) |
-| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | [@BotFather](https://t.me/BotFather) (optional) |
+| Variable | Purpose |
+|----------|---------|
+| `SUPABASE_URL`, `SUPABASE_ANON_KEY` | Database |
+| `LINKEDIN_EMAIL` / `PASSWORD` | Scraper login (optional if `SCRAPER_PUBLIC_MODE=true`) |
+| `CLAUDE_API_KEY` | Cover letters + Q&A |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Alerts + `/answer` / `/approve` |
+| `REVIEW_BEFORE_SUBMIT` | Default `true` — blocks final submit until approved |
 
-Never commit `.env` or expose `SUPABASE_SERVICE_ROLE_KEY` in the frontend.
-
-### 2. Supabase schema
-
-Schema is already applied on the remote `Jantasearcher` project. To re-apply locally or on a new project, run `supabase/migrations/20250703000000_initial_schema.sql` in the SQL Editor.
-
-### 3. Backend
+### Backend
 
 ```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-playwright install chromium
+cd backend && source .venv/bin/activate
+pip install -r requirements.txt && playwright install chromium
 PYTHONPATH=.. uvicorn app.main:app --reload --port 8000
 ```
 
-Verify:
-- `GET http://localhost:8000/db/health`
-- `GET http://localhost:8000/profile`
-- `POST http://localhost:8000/ai/test-tailor` (needs `CLAUDE_API_KEY`)
-
-### 4. Frontend
+### Frontend
 
 ```bash
-cd frontend
-npm install
-npm run dev
+cd frontend && npm install && npm run dev
 ```
 
 Open http://localhost:3000
 
-### 5. Run scraper
+## Telegram commands
 
-From the dashboard **Run scraper** button, or:
+| Command | Action |
+|---------|--------|
+| `/answer JOB_ID text` | Save answer to Q&A memory, unblock job |
+| `/approve JOB_ID` | Submit after review pause |
+| `/summary` | Send stats now |
 
-```bash
-POST http://localhost:8000/scraper/run
-```
+Daily summary auto-sends at `DAILY_SUMMARY_HOUR_UTC` (default 7 UTC).
 
-## API endpoints
+## API highlights
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/health` | Health check |
-| GET | `/db/health` | Supabase connectivity |
-| GET | `/stats` | Dashboard counts |
-| GET | `/jobs` | List external-apply jobs |
-| GET | `/jobs/{id}` | Single job |
-| POST | `/jobs/{id}/cover-letter` | Generate + save cover letter |
-| PATCH | `/jobs/{id}/status` | Update job status |
-| POST | `/scraper/run` | Run LinkedIn scraper |
-| GET | `/profile` | Profile JSON loaded |
-| POST | `/ai/test-tailor` | Test Claude tailoring |
+| POST | `/scraper/run` | LinkedIn scraper |
+| POST | `/scraper/profession` | profession.hu scraper |
+| POST | `/scraper/canary` | DOM selector health check |
+| POST | `/jobs/{id}/cover-letter` | Generate cover letter |
+| POST | `/jobs/{id}/apply` | Auto-fill ATS form |
+| POST | `/jobs/{id}/approve` | Submit after review |
+| POST | `/ai/answer` | Generate ATS free-text answer |
+| GET | `/qa/lookup` | Semantic Q&A memory lookup |
 
-## Build phases
+## Scheduled canary (cron)
 
-| Phase | Status |
-|-------|--------|
-| 1. Supabase schema | Done |
-| 2. Profile loader + Claude API | Done |
-| 3. LinkedIn scraper → Supabase | Done |
-| 4. Dashboard + jobs UI | Done |
-| 5. Greenhouse ATS filler | Pending |
-| 6. HU job board scrapers | Pending |
+```bash
+0 6 * * * cd /path/to/Jantasearcher && python3 scripts/run_canary.py
+```
 
-## Notes
+## Constraints (enforced)
 
-- LinkedIn may show CAPTCHAs — scraper pauses and saves partial results.
-- Use a VPN, low daily caps, and human-like delays (`SCRAPER_DELAY_*`).
-- External apply URLs open the company's careers site; auto-submit is not in v1.
+- No LinkedIn Easy Apply automation (skip only)
+- No fingerprint spoofing / anti-bot evasion
+- No CAPTCHA auto-solving — manual handoff
+- Resume/cover letter generation must not fabricate profile facts
+
+## Build status
+
+| Component | Status |
+|-----------|--------|
+| Supabase schema + dedup | Done |
+| LinkedIn scraper + session + public mode | Done |
+| profession.hu scraper | Done |
+| DOM canary + Telegram alerts | Done |
+| Claude tailoring + answers | Done |
+| Q&A memory (semantic via Claude) | Done |
+| Telegram bot (escalation + replies) | Done |
+| Review-before-submit (default ON) | Done |
+| Greenhouse + Lever fillers | Done |
+| Real profile data | **You must fill `data/profile.json`** |

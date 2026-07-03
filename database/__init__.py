@@ -10,6 +10,8 @@ from database.jobs import (
     list_jobs,
     save_scraped_jobs,
     update_job_cover_letter,
+    update_job_failure,
+    update_job_metadata,
     update_job_status,
 )
 from database.models import JobInsert, JobRecord, JobStatus, detect_ats_platform
@@ -32,5 +34,7 @@ __all__ = [
     "save_scraped_jobs",
     "store_qa_answer",
     "update_job_cover_letter",
+    "update_job_failure",
+    "update_job_metadata",
     "update_job_status",
 ]

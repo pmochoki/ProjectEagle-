@@ -26,6 +26,9 @@ def job_to_api_dict(job: JobRecord) -> dict[str, Any]:
         "applied_at": job.date_applied,
         "ats_platform": job.ats_platform,
         "source": job.source,
+        "failure_reason": meta.get("failure_reason"),
+        "review_pending": meta.get("review_pending", False),
+        "pending_question": meta.get("pending_question"),
     }
 
 
@@ -125,6 +128,48 @@ def update_job_status(
     return _row_to_job(result.data)
 
 
+def update_job_metadata(job_id: str, **fields: Any) -> JobRecord:
+    job = get_job(job_id)
+    if not job:
+        raise RuntimeError(f"Job not found: {job_id}")
+    metadata = dict(job.metadata or {})
+    metadata.update(fields)
+    client = get_supabase_client()
+    result = (
+        client.table("jobs")
+        .update({"metadata": metadata})
+        .eq("id", job_id)
+        .select("*")
+        .single()
+        .execute()
+    )
+    if not result.data:
+        raise RuntimeError(f"Failed to update metadata for job: {job_id}")
+    return _row_to_job(result.data)
+
+
+def update_job_failure(job_id: str, error: str) -> JobRecord:
+    """Mark job failed and persist error reason in metadata."""
+    job = get_job(job_id)
+    if not job:
+        raise RuntimeError(f"Job not found: {job_id}")
+    metadata = dict(job.metadata or {})
+    metadata["failure_reason"] = error
+    metadata["last_error_at"] = datetime.now(timezone.utc).isoformat()
+    client = get_supabase_client()
+    result = (
+        client.table("jobs")
+        .update({"status": "failed", "metadata": metadata})
+        .eq("id", job_id)
+        .select("*")
+        .single()
+        .execute()
+    )
+    if not result.data:
+        raise RuntimeError(f"Failed to mark job failed: {job_id}")
+    return _row_to_job(result.data)
+
+
 def update_job_cover_letter(job_id: str, cover_letter: str) -> JobRecord:
     job = get_job(job_id)
     if not job:
@@ -211,6 +256,7 @@ def save_scraped_jobs(jobs: list[Any]) -> int:
             external_url=scraped.external_apply_url,
             location=scraped.location,
             description=scraped.description,
+            posted_date=getattr(scraped, "posted_date", None),
             is_easy_apply=scraped.is_easy_apply,
             metadata={
                 "linkedin_url": scraped.linkedin_url,

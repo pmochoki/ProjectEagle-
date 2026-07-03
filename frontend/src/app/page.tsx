@@ -10,6 +10,8 @@ import {
   fetchAiHealth,
   fetchDbHealth,
   runScraper,
+  runProfessionScraper,
+  runCanary,
   type Job,
   type Stats,
 } from "@/lib/api";
@@ -21,6 +23,8 @@ export default function Home() {
   const [dbReady, setDbReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [scraping, setScraping] = useState(false);
+  const [professionScraping, setProfessionScraping] = useState(false);
+  const [canaryRunning, setCanaryRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -58,6 +62,31 @@ export default function Home() {
       setError(e instanceof Error ? e.message : "Scraper failed");
     } finally {
       setScraping(false);
+    }
+  }
+
+  async function handleProfessionScrape() {
+    setProfessionScraping(true);
+    setError(null);
+    try {
+      await runProfessionScraper();
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Profession scraper failed");
+    } finally {
+      setProfessionScraping(false);
+    }
+  }
+
+  async function handleCanary() {
+    setCanaryRunning(true);
+    setError(null);
+    try {
+      await runCanary();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Canary failed");
+    } finally {
+      setCanaryRunning(false);
     }
   }
 
@@ -101,11 +130,21 @@ export default function Home() {
         </button>
         <button
           type="button"
-          onClick={load}
-          className="rounded-xl border border-white/10 px-4 py-2 text-sm text-zinc-300 hover:bg-white/5"
+          onClick={handleProfessionScrape}
+          disabled={professionScraping}
+          className="rounded-xl border border-white/10 px-4 py-2 text-sm text-zinc-300 hover:bg-white/5 disabled:opacity-50"
         >
-          Refresh
+          {professionScraping ? "Scraping profession.hu…" : "Scrape profession.hu"}
         </button>
+        <button
+          type="button"
+          onClick={handleCanary}
+          disabled={canaryRunning}
+          className="rounded-xl border border-amber-500/30 px-4 py-2 text-sm text-amber-200 hover:bg-amber-500/10 disabled:opacity-50"
+        >
+          {canaryRunning ? "Running canary…" : "Run DOM canary"}
+        </button>
+        <button
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
