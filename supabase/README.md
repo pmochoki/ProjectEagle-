@@ -6,7 +6,7 @@ Phase 1 database schema for job discovery, application tracking, Q&A memory, and
 
 ### Option A: Supabase Dashboard (hosted project)
 
-1. Create a project at [supabase.com](https://supabase.com).
+1. Open your project: `https://twojjtkqifmscxvrettm.supabase.co`
 2. Open **SQL Editor** and run the contents of:
    `supabase/migrations/20250703000000_initial_schema.sql`
 3. Copy the project URL and keys into `.env` (see root `.env.example`).

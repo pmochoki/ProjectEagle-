@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 .venv/
+.env
 database/jobdragon.db
 data/profile.json
 
