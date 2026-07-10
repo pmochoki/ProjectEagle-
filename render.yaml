@@ -1,0 +1,36 @@
+# Deploy the Python backend so the Telegram bot stays online 24/7.
+# Vercel only hosts the Next.js frontend — it cannot run this API.
+#
+# 1. Create a Web Service on https://render.com from this repo
+# 2. Copy env vars from your local .env / Vercel (see backend/README.md)
+# 3. Set NEXT_PUBLIC_API_URL on Vercel to your Render URL
+
+services:
+  - type: web
+    name: jantasearcher-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r backend/requirements.txt && playwright install chromium
+    startCommand: cd backend && PYTHONPATH=.. uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: TELEGRAM_CHANNEL_ID
+        sync: false
+      - key: CLAUDE_API_KEY
+        sync: false
+      - key: DAILY_SUMMARY_TIMEZONE
+        value: Europe/Budapest
+      - key: DAILY_SUMMARY_HOUR_LOCAL
+        value: "22"

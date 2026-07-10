@@ -26,9 +26,12 @@ from database.jobs import (  # noqa: E402
 from database.models import JobStatus  # noqa: E402
 from database.profile import ProfileError, load_profile  # noqa: E402
 from database.qa_memory import find_qa_answer, store_qa_answer  # noqa: E402
-from notifications.telegram import send_daily_summary  # noqa: E402
-from notifications.telegram_bot import start_telegram_bot_background, stop_telegram_bot  # noqa: E402
-from notifications.telegram import notify_cover_letter_ready  # noqa: E402
+from notifications.telegram import notify_cover_letter_ready, send_daily_summary  # noqa: E402
+from notifications.telegram_bot import (  # noqa: E402
+    start_telegram_bot_background,
+    stop_telegram_bot,
+    telegram_bot_status,
+)
 from scraper.canary import run_all_canaries_sync  # noqa: E402
 from scraper.config import ScraperConfig, review_before_submit  # noqa: E402
 from scraper.linkedin_scraper import run_scraper_sync  # noqa: E402
@@ -206,6 +209,11 @@ def stats():
         return get_stats()
     except SupabaseConfigError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.get("/telegram/health")
+def telegram_health():
+    return telegram_bot_status()
 
 
 @app.post("/telegram/daily-summary")

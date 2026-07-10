@@ -147,6 +147,24 @@ def _handle_message(text: str, chat_id: str) -> None:
         send_daily_summary(get_stats(), chat_id=chat_id)
         return
 
+    if text.startswith("/"):
+        send_telegram_message(
+            "Unknown command. Send <code>/list</code> to see available commands.",
+            chat_id=chat_id,
+        )
+
+
+def _prepare_polling() -> bool:
+    from notifications.telegram import ensure_polling_mode, send_startup_message, telegram_status
+
+    status = telegram_status()
+    if not status.get("configured"):
+        return False
+    if status.get("webhook_blocks_polling"):
+        ensure_polling_mode()
+    send_startup_message()
+    return True
+
 
 def _poll_loop() -> None:
     offset = _load_offset()
@@ -204,6 +222,9 @@ def start_telegram_bot_background() -> None:
     if _bot_thread and _bot_thread.is_alive():
         return
 
+    if not _prepare_polling():
+        return
+
     _stop_event.clear()
     _bot_thread = threading.Thread(target=_poll_loop, name="telegram-bot", daemon=True)
     _bot_thread.start()
@@ -211,3 +232,11 @@ def start_telegram_bot_background() -> None:
 
 def stop_telegram_bot() -> None:
     _stop_event.set()
+
+
+def telegram_bot_status() -> dict:
+    from notifications.telegram import telegram_status
+
+    status = telegram_status()
+    status["bot_thread_alive"] = bool(_bot_thread and _bot_thread.is_alive())
+    return status

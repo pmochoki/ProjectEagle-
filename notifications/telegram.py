@@ -31,18 +31,51 @@ def _is_configured() -> bool:
     return bool(os.getenv("TELEGRAM_BOT_TOKEN", "").strip() and notify_chat_ids())
 
 
-def _api(method: str, payload: dict) -> dict | None:
+def _api(method: str, payload: dict | None = None) -> dict | None:
     token = os.getenv("TELEGRAM_BOT_TOKEN", "")
     if not token:
         return None
     url = TELEGRAM_API.format(token=token, method=method)
     try:
-        response = httpx.post(url, json=payload, timeout=20.0)
+        response = httpx.post(url, json=payload or {}, timeout=20.0)
         if response.status_code == 200:
             return response.json()
     except httpx.HTTPError:
         return None
     return None
+
+
+def telegram_status() -> dict:
+    """Diagnostics for API health checks."""
+    token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    chats = notify_chat_ids()
+    if not token:
+        return {"configured": False, "polling_ready": False, "detail": "Missing TELEGRAM_BOT_TOKEN"}
+
+    me = _api("getMe")
+    webhook = _api("getWebhookInfo")
+    return {
+        "configured": bool(chats),
+        "polling_ready": bool(chats),
+        "notify_chat_ids": chats,
+        "bot_username": (me or {}).get("result", {}).get("username"),
+        "webhook_url": (webhook or {}).get("result", {}).get("url") or "",
+        "webhook_blocks_polling": bool((webhook or {}).get("result", {}).get("url")),
+    }
+
+
+def ensure_polling_mode() -> bool:
+    """Delete webhook so long-polling getUpdates works."""
+    result = _api("deleteWebhook", {"drop_pending_updates": False})
+    return bool(result and result.get("ok"))
+
+
+def send_startup_message() -> None:
+    send_telegram_message(
+        "<b>JantaSearcher is connected.</b>\n"
+        "You will get scrape alerts, question escalations, and review prompts here.\n"
+        "Send <code>/list</code> for commands."
+    )
 
 
 def send_telegram_message(text: str, *, chat_id: str | None = None) -> bool:
