@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useAuth } from "@/contexts/AuthProvider";
 
 function NavItem({
   href,
@@ -26,6 +29,14 @@ export function AppShell({
   children: React.ReactNode;
   connected?: boolean;
 }) {
+  const { user, signOut } = useAuth();
+  const email = user?.email ?? "Signed in";
+
+  async function handleSignOut() {
+    await signOut();
+    window.location.href = "/login";
+  }
+
   return (
     <div className="min-h-screen">
       <div className="mx-auto flex w-full max-w-6xl gap-6 px-4 py-6">
@@ -45,6 +56,16 @@ export function AppShell({
               <NavItem href="/jobs" label="Jobs & Scholarships" />
               <NavItem href="/settings" label="Settings" />
               <NavItem href="/logs" label="Logs" />
+            </div>
+            <div className="mt-4 border-t border-white/10 pt-4">
+              <div className="truncate text-xs text-zinc-400">{email}</div>
+              <button
+                type="button"
+                onClick={handleSignOut}
+                className="mt-2 w-full rounded-xl border border-white/10 px-3 py-2 text-xs text-zinc-300 hover:bg-white/5"
+              >
+                Sign out
+              </button>
             </div>
           </div>
           <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4 text-xs text-zinc-400">

@@ -1,71 +1,103 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/components/AppShell";
+import { fetchProfileFull, saveProfile } from "@/lib/api";
 
 export default function SettingsPage() {
+  const [profileJson, setProfileJson] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const profile = await fetchProfileFull();
+      setProfileJson(JSON.stringify(profile, null, 2));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load profile");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const parsed = JSON.parse(profileJson) as Record<string, unknown>;
+      await saveProfile(parsed);
+      setMessage("Profile saved — cover letters and auto-apply will use this data.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Save failed — check JSON is valid");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <AppShell title="Settings">
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-4 md:col-span-2">
-          <div className="text-sm font-medium text-violet-200">
-            Claude API setup (you&apos;re here now)
-          </div>
-          <ol className="mt-3 list-inside list-decimal space-y-2 text-sm text-zinc-300">
-            <li>
-              On the console screen: click <strong className="text-white">Individual</strong>{" "}
-              (solo builder — correct for JantaSearcher).
-            </li>
-            <li>Add a payment method when prompted (pay-as-you-go, cents per letter).</li>
-            <li>
-              Go to <strong className="text-white">API Keys</strong> → Create key → copy it.
-            </li>
-            <li>
-              Paste into <code className="text-zinc-200">/Users/mokoro/Jantasearcher/.env</code>:
-              <pre className="mt-2 overflow-x-auto rounded-lg bg-black/30 p-3 text-xs text-emerald-300">
-                CLAUDE_API_KEY=sk-ant-api03-...
-              </pre>
-            </li>
-            <li>Restart the backend, refresh the dashboard — Claude badge turns violet.</li>
-          </ol>
-          <p className="mt-3 text-xs text-zinc-500">
-            Model: Sonnet 4 (best quality). ~$0.03 per cover letter. Official docs:{" "}
-            <a
-              href="https://platform.claude.com/docs/en/about-claude/pricing"
-              className="text-violet-300 underline"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Anthropic pricing
-            </a>
+      <div className="grid gap-4">
+        <div className="rounded-2xl border border-sky-500/20 bg-sky-500/5 p-4">
+          <div className="text-sm font-medium text-sky-200">Your account profile</div>
+          <p className="mt-2 text-sm text-zinc-300">
+            Each signed-in user has a private profile (mechatronics BSc, skills, experience).
+            Edit below — used for cover letters and ATS auto-fill. Your friend gets their own
+            profile when they create an account.
           </p>
         </div>
 
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-          <div className="text-sm font-medium text-white">Other credentials</div>
-          <div className="mt-2 space-y-2 text-sm text-zinc-300">
-            <p>
-              All secrets live in the project root <code className="text-zinc-200">.env</code> file
-              (never in the frontend).
-            </p>
-            <ul className="list-inside list-disc space-y-1 text-zinc-400">
-              <li>SUPABASE_URL, SUPABASE_ANON_KEY (already set)</li>
-              <li>LINKEDIN_EMAIL / LINKEDIN_PASSWORD (for scraper)</li>
-              <li>TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID (optional)</li>
-            </ul>
-            <p className="mt-2 text-zinc-400">
-              Edit your applicant profile at <code className="text-zinc-200">data/profile.json</code>.
-            </p>
+        {error && (
+          <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+            {error}
           </div>
-        </div>
+        )}
+        {message && (
+          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+            {message}
+          </div>
+        )}
 
         <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-          <div className="text-sm font-medium text-white">Job search</div>
-          <div className="mt-2 space-y-2 text-sm text-zinc-300">
-            <p>Configure search criteria via environment variables:</p>
-            <ul className="list-inside list-disc space-y-1 text-zinc-400">
-              <li>JOB_SEARCH_TITLE</li>
-              <li>JOB_SEARCH_LOCATION</li>
-              <li>SCRAPER_MAX_PAGES, SCRAPER_DELAY_MIN/MAX</li>
-            </ul>
-          </div>
+          <div className="mb-2 text-sm font-medium text-white">Profile JSON</div>
+          {loading ? (
+            <p className="text-sm text-zinc-400">Loading profile…</p>
+          ) : (
+            <textarea
+              value={profileJson}
+              onChange={(e) => setProfileJson(e.target.value)}
+              rows={24}
+              className="w-full rounded-xl border border-white/10 bg-black/30 p-3 font-mono text-xs text-zinc-200"
+              spellCheck={false}
+            />
+          )}
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving || loading}
+            className="mt-3 rounded-xl bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-black hover:opacity-90 disabled:opacity-50"
+          >
+            {saving ? "Saving…" : "Save profile"}
+          </button>
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-zinc-400">
+          <p className="font-medium text-white">Local automation (your Mac)</p>
+          <p className="mt-2">
+            Scrapers and Telegram still run on your machine. Set{" "}
+            <code className="text-zinc-200">AUTOMATION_USER_ID</code> in{" "}
+            <code className="text-zinc-200">.env</code> to your account UUID (Settings → copy from
+            browser devtools after sign-in, or Supabase dashboard) so background scans attach to
+            your account.
+          </p>
         </div>
       </div>
     </AppShell>

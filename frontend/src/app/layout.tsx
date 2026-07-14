@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import { AuthProvider } from "@/contexts/AuthProvider";
 import "./globals.css";
 
 const inter = Inter({
@@ -23,7 +24,7 @@ export default function RootLayout({
         className="min-h-full bg-[#0D0D0D] text-zinc-100 font-sans"
         suppressHydrationWarning
       >
-        {children}
+        <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
   );

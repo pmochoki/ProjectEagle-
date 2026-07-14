@@ -2,6 +2,12 @@ const API_URL =
   process.env.NEXT_PUBLIC_API_URL ??
   (process.env.NODE_ENV === "production" ? "/api" : "http://localhost:8000");
 
+let authAccessToken: string | null = null;
+
+export function setAuthToken(token: string | null) {
+  authAccessToken = token;
+}
+
 export type JobStatus =
   | "new"
   | "queued"
@@ -60,10 +66,14 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...(authAccessToken ? { Authorization: `Bearer ${authAccessToken}` } : {}),
       ...init?.headers,
     },
     cache: "no-store",
   });
+  if (res.status === 401) {
+    throw new Error("Sign in required — please log in again.");
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     const detail = body.detail;
@@ -72,6 +82,18 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     );
   }
   return res.json() as Promise<T>;
+}
+
+export async function fetchProfileFull(): Promise<Record<string, unknown>> {
+  const data = await apiFetch<{ profile: Record<string, unknown> }>("/profile/full");
+  return data.profile;
+}
+
+export async function saveProfile(profile: Record<string, unknown>): Promise<void> {
+  await apiFetch("/profile", {
+    method: "PUT",
+    body: JSON.stringify({ data: profile }),
+  });
 }
 
 export async function fetchStats(): Promise<Stats> {

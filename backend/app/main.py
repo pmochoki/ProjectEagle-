@@ -3,7 +3,7 @@ from pathlib import Path
 import os
 import sys
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -28,7 +28,6 @@ from database.jobs import (  # noqa: E402
     record_application_result,
 )
 from database.models import JobStatus  # noqa: E402
-from database.profile import ProfileError, load_profile  # noqa: E402
 from database.qa_memory import find_qa_answer, store_qa_answer  # noqa: E402
 from notifications.telegram import notify_cover_letter_ready, send_daily_summary  # noqa: E402
 from notifications.telegram_bot import (  # noqa: E402
@@ -56,6 +55,14 @@ from scraper.indeed_eu import run_indeed_scraper_sync  # noqa: E402
 from scraper.scholarship_feeds import run_scholarship_feeds_sync  # noqa: E402
 from scraper.sources.registry import ALL_SOURCES  # noqa: E402
 from automation.urgency import urgency_status  # noqa: E402
+from backend.app.deps import require_user  # noqa: E402
+from database.auth import AuthUser  # noqa: E402
+from database.profile import (  # noqa: E402
+    ProfileError,
+    get_profile_row,
+    load_profile,
+    save_profile_row,
+)
 
 
 @asynccontextmanager
@@ -119,6 +126,15 @@ class QaStoreInput(BaseModel):
     job_id_first_asked: str | None = None
 
 
+class ProfileUpdate(BaseModel):
+    data: dict
+
+
+@app.get("/auth/me")
+def auth_me(user: AuthUser = Depends(require_user)):
+    return {"ok": True, "user": {"id": user.id, "email": user.email}}
+
+
 @app.get("/health")
 def health():
     return {"ok": True}
@@ -145,17 +161,39 @@ def db_health():
 
 
 @app.get("/profile")
-def get_profile():
+def get_profile(user: AuthUser = Depends(require_user)):
     try:
-        profile = load_profile()
+        data = get_profile_row(user.id)
+        if not data:
+            data = load_profile(user_id=user.id)
         return {
             "ok": True,
-            "contact_name": profile["contact"].get("full_name"),
-            "experience_count": len(profile.get("experience", [])),
-            "projects_count": len(profile.get("projects", [])),
+            "contact_name": data["contact"].get("full_name"),
+            "experience_count": len(data.get("experience", [])),
+            "projects_count": len(data.get("projects", [])),
         }
     except ProfileError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/profile/full")
+def get_profile_full(user: AuthUser = Depends(require_user)):
+    data = get_profile_row(user.id)
+    if not data:
+        try:
+            data = load_profile(user_id=user.id)
+        except ProfileError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"ok": True, "profile": data}
+
+
+@app.put("/profile")
+def update_profile(body: ProfileUpdate, user: AuthUser = Depends(require_user)):
+    try:
+        saved = save_profile_row(user.id, body.data)
+    except ProfileError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "profile": saved}
 
 
 @app.get("/ai/health")
@@ -170,9 +208,12 @@ def ai_health():
 
 
 @app.post("/ai/test-tailor")
-def test_tailor(job: JobDescriptionInput | None = None):
+def test_tailor(
+    job: JobDescriptionInput | None = None,
+    user: AuthUser = Depends(require_user),
+):
     try:
-        profile = load_profile()
+        profile = load_profile(user_id=user.id)
     except ProfileError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -197,15 +238,15 @@ def test_tailor(job: JobDescriptionInput | None = None):
 
 
 @app.post("/ai/answer")
-def ai_answer(body: AnswerInput):
+def ai_answer(body: AnswerInput, user: AuthUser = Depends(require_user)):
     try:
-        profile = load_profile()
+        profile = load_profile(user_id=user.id)
     except ProfileError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     job_ctx = None
     if body.job_id:
-        job = get_job(body.job_id)
+        job = get_job(body.job_id, user_id=user.id)
         if job:
             job_ctx = {
                 "title": job.title,
@@ -224,7 +265,7 @@ def ai_answer(body: AnswerInput):
 
 
 @app.get("/qa/lookup")
-def qa_lookup(question: str = Query(..., min_length=3)):
+def qa_lookup(question: str = Query(..., min_length=3), user: AuthUser = Depends(require_user)):
     from ai.qa_match import find_semantic_qa_answer
 
     hit = find_semantic_qa_answer(question)
@@ -232,7 +273,7 @@ def qa_lookup(question: str = Query(..., min_length=3)):
 
 
 @app.post("/qa/store")
-def qa_store(body: QaStoreInput):
+def qa_store(body: QaStoreInput, user: AuthUser = Depends(require_user)):
     record = store_qa_answer(
         body.question_text,
         body.answer_text,
@@ -242,9 +283,9 @@ def qa_store(body: QaStoreInput):
 
 
 @app.get("/stats")
-def stats():
+def stats(user: AuthUser = Depends(require_user)):
     try:
-        return get_stats()
+        return get_stats(user_id=user.id)
     except SupabaseConfigError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
@@ -262,9 +303,13 @@ def trigger_daily_summary():
 
 
 @app.get("/jobs")
-def api_list_jobs(status: JobStatus | None = Query(default=None), limit: int = Query(default=100, le=200)):
+def api_list_jobs(
+    status: JobStatus | None = Query(default=None),
+    limit: int = Query(default=100, le=200),
+    user: AuthUser = Depends(require_user),
+):
     try:
-        jobs = list_jobs(status=status, external_only=True, limit=limit)
+        jobs = list_jobs(status=status, external_only=True, limit=limit, user_id=user.id)
         return {"ok": True, "jobs": [job_to_api_dict(job) for job in jobs]}
     except SupabaseConfigError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -273,9 +318,9 @@ def api_list_jobs(status: JobStatus | None = Query(default=None), limit: int = Q
 
 
 @app.get("/jobs/{job_id}")
-def read_job(job_id: str):
+def read_job(job_id: str, user: AuthUser = Depends(require_user)):
     try:
-        job = get_job(job_id)
+        job = get_job(job_id, user_id=user.id)
     except SupabaseConfigError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     if not job:
@@ -284,9 +329,9 @@ def read_job(job_id: str):
 
 
 @app.post("/jobs/{job_id}/summary")
-def create_job_summary(job_id: str):
+def create_job_summary(job_id: str, user: AuthUser = Depends(require_user)):
     try:
-        job = get_job(job_id)
+        job = get_job(job_id, user_id=user.id)
     except SupabaseConfigError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     if not job:
@@ -318,16 +363,16 @@ def create_job_summary(job_id: str):
 
 
 @app.post("/jobs/{job_id}/cover-letter")
-def create_cover_letter(job_id: str):
+def create_cover_letter(job_id: str, user: AuthUser = Depends(require_user)):
     try:
-        job = get_job(job_id)
+        job = get_job(job_id, user_id=user.id)
     except SupabaseConfigError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
     try:
-        profile = load_profile()
+        profile = load_profile(user_id=user.id)
     except ProfileError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -352,9 +397,13 @@ def create_cover_letter(job_id: str):
 
 
 @app.post("/jobs/{job_id}/apply")
-def apply_job(job_id: str, force_submit: bool = Query(default=False)):
+def apply_job(
+    job_id: str,
+    force_submit: bool = Query(default=False),
+    user: AuthUser = Depends(require_user),
+):
     try:
-        if not get_job(job_id):
+        if not get_job(job_id, user_id=user.id):
             raise HTTPException(status_code=404, detail="Job not found")
         result = apply_to_job(job_id, force_submit=force_submit)
         return {"ok": True, "result": result}
@@ -365,9 +414,9 @@ def apply_job(job_id: str, force_submit: bool = Query(default=False)):
 
 
 @app.post("/jobs/{job_id}/approve")
-async def approve_job(job_id: str):
+async def approve_job(job_id: str, user: AuthUser = Depends(require_user)):
     try:
-        if not get_job(job_id):
+        if not get_job(job_id, user_id=user.id):
             raise HTTPException(status_code=404, detail="Job not found")
         result = await submit_after_review(job_id)
         record_application_result(job_id, outcome=result.outcome, message=result.message)
@@ -377,7 +426,7 @@ async def approve_job(job_id: str):
 
 
 @app.patch("/jobs/{job_id}/status")
-def patch_job_status(job_id: str, body: StatusUpdate):
+def patch_job_status(job_id: str, body: StatusUpdate, user: AuthUser = Depends(require_user)):
     allowed: set[JobStatus] = {
         "new",
         "queued",
@@ -390,7 +439,7 @@ def patch_job_status(job_id: str, body: StatusUpdate):
         raise HTTPException(status_code=400, detail=f"Status must be one of: {sorted(allowed)}")
 
     try:
-        if not get_job(job_id):
+        if not get_job(job_id, user_id=user.id):
             raise HTTPException(status_code=404, detail="Job not found")
         update_job_status(job_id, body.status)
         if body.status == "applied":
@@ -406,7 +455,7 @@ def patch_job_status(job_id: str, body: StatusUpdate):
 
 
 @app.post("/scraper/run")
-def run_scraper():
+def run_scraper(user: AuthUser = Depends(require_user)):
     try:
         cfg = ScraperConfig.from_env()
         result = run_scraper_sync(cfg)
@@ -420,7 +469,7 @@ def run_scraper():
 
 
 @app.post("/scraper/profession")
-def run_profession():
+def run_profession(user: AuthUser = Depends(require_user)):
     try:
         cfg = ScraperConfig.from_env()
         result = run_profession_scraper_sync(cfg)
@@ -432,7 +481,7 @@ def run_profession():
 
 
 @app.post("/scraper/eu-jobs")
-def run_eu_jobs():
+def run_eu_jobs(user: AuthUser = Depends(require_user)):
     try:
         cfg = ScraperConfig.from_env()
         result = run_eu_jobs_scraper_sync(cfg)
@@ -446,7 +495,7 @@ def run_eu_jobs():
 
 
 @app.post("/scraper/scholarships")
-def run_scholarships():
+def run_scholarships(user: AuthUser = Depends(require_user)):
     try:
         cfg = ScraperConfig.from_env()
         result = run_scholarship_scraper_sync(cfg)
@@ -470,7 +519,7 @@ def run_canary():
 
 
 @app.get("/urgency/status")
-def get_urgency_status():
+def get_urgency_status(user: AuthUser = Depends(require_user)):
     u = urgency_status()
     cfg = AutomationConfig.from_env()
     return {
@@ -494,7 +543,7 @@ def get_urgency_status():
 
 
 @app.post("/scraper/eures")
-def run_eures():
+def run_eures(user: AuthUser = Depends(require_user)):
     try:
         cfg = ScraperConfig.from_env()
         return {"ok": True, "result": run_eures_scraper_sync(cfg)}
@@ -503,7 +552,7 @@ def run_eures():
 
 
 @app.post("/scraper/arbeitnow")
-def run_arbeitnow():
+def run_arbeitnow(user: AuthUser = Depends(require_user)):
     try:
         return {"ok": True, "result": run_arbeitnow_scraper_sync(ScraperConfig.from_env())}
     except Exception as exc:
@@ -511,7 +560,7 @@ def run_arbeitnow():
 
 
 @app.post("/scraper/remoteok")
-def run_remoteok():
+def run_remoteok(user: AuthUser = Depends(require_user)):
     try:
         return {"ok": True, "result": run_remoteok_scraper_sync(ScraperConfig.from_env())}
     except Exception as exc:
@@ -519,7 +568,7 @@ def run_remoteok():
 
 
 @app.post("/scraper/indeed")
-def run_indeed():
+def run_indeed(user: AuthUser = Depends(require_user)):
     try:
         return {"ok": True, "result": run_indeed_scraper_sync(ScraperConfig.from_env())}
     except Exception as exc:
@@ -527,7 +576,7 @@ def run_indeed():
 
 
 @app.post("/scraper/scholarship-feeds")
-def run_scholarship_feeds():
+def run_scholarship_feeds(user: AuthUser = Depends(require_user)):
     try:
         return {"ok": True, "result": run_scholarship_feeds_sync(ScraperConfig.from_env())}
     except Exception as exc:
@@ -535,7 +584,7 @@ def run_scholarship_feeds():
 
 
 @app.get("/automation/status")
-def get_automation_status():
+def get_automation_status(user: AuthUser = Depends(require_user)):
     status = automation_status()
     state = status.pop("state")
     return {
@@ -561,6 +610,7 @@ def trigger_automation(
     force_eu: bool = Query(default=False),
     force_scholarships: bool = Query(default=False),
     force_apply: bool = Query(default=False),
+    user: AuthUser = Depends(require_user),
 ):
     """Run one automation cycle (respects intervals unless force_* is true)."""
     try:

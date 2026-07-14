@@ -3,10 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from database.auth_context import active_user_id
 from database.client import get_supabase_client
-from database.models import JobInsert, JobRecord, JobStatus, _row_to_job, detect_ats_platform
-
-
 from database.models import JobInsert, JobRecord, JobStatus, _row_to_job, detect_ats_platform
 
 _DB_SOURCES = {"linkedin", "profession_hu", "jobline_hu", "other"}
@@ -66,17 +64,19 @@ def find_duplicate_job(
     title: str,
     *,
     similarity_threshold: float = 0.72,
+    user_id: str | None = None,
 ) -> str | None:
     """Return an existing job id when company+title fuzzy-match, else None."""
+    uid = user_id or active_user_id()
     client = get_supabase_client()
-    result = client.rpc(
-        "find_duplicate_job",
-        {
-            "p_company": company,
-            "p_title": title,
-            "p_similarity_threshold": similarity_threshold,
-        },
-    ).execute()
+    params: dict[str, Any] = {
+        "p_company": company,
+        "p_title": title,
+        "p_similarity_threshold": similarity_threshold,
+    }
+    if uid:
+        params["p_user_id"] = uid
+    result = client.rpc("find_duplicate_job", params).execute()
 
     if not result.data:
         return None
@@ -119,6 +119,9 @@ def insert_job_if_new(
         "metadata": job.metadata or {},
         "status": "new",
     }
+    uid = active_user_id()
+    if uid:
+        payload["user_id"] = uid
 
     client = get_supabase_client()
     result = client.table("jobs").insert(payload).execute()
@@ -128,9 +131,18 @@ def insert_job_if_new(
     return _row_to_job(result.data[0]), "inserted"
 
 
-def get_job(job_id: str) -> JobRecord | None:
+def _job_query(client, user_id: str | None):
+    query = client.table("jobs").select("*")
+    if user_id:
+        query = query.eq("user_id", user_id)
+    return query
+
+
+def get_job(job_id: str, *, user_id: str | None = None) -> JobRecord | None:
+    uid = user_id or active_user_id()
     client = get_supabase_client()
-    result = client.table("jobs").select("*").eq("id", job_id).limit(1).execute()
+    query = _job_query(client, uid).eq("id", job_id).limit(1)
+    result = query.execute()
     if not result.data:
         return None
     return _row_to_job(result.data[0])
@@ -226,9 +238,11 @@ def list_jobs(
     status: JobStatus | None = None,
     external_only: bool = True,
     limit: int = 100,
+    user_id: str | None = None,
 ) -> list[JobRecord]:
+    uid = user_id or active_user_id()
     client = get_supabase_client()
-    query = client.table("jobs").select("*").order("date_found", desc=True).limit(limit)
+    query = _job_query(client, uid).order("date_found", desc=True).limit(limit)
     if status:
         query = query.eq("status", status)
     if external_only:
@@ -254,14 +268,13 @@ def record_application_result(job_id: str, *, outcome: str, message: str) -> Job
     return update_job_metadata(job_id, **fields)
 
 
-def get_stats() -> dict[str, int]:
+def get_stats(*, user_id: str | None = None) -> dict[str, int]:
+    uid = user_id or active_user_id()
     client = get_supabase_client()
-    result = (
-        client.table("jobs")
-        .select("status, is_easy_apply, metadata")
-        .eq("is_easy_apply", False)
-        .execute()
-    )
+    query = client.table("jobs").select("status, is_easy_apply, metadata").eq("is_easy_apply", False)
+    if uid:
+        query = query.eq("user_id", uid)
+    result = query.execute()
     rows = result.data or []
 
     stats = {

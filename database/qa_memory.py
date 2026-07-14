@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from database.auth_context import active_user_id
+
 
 @dataclass
 class QAMemoryRecord:
@@ -21,14 +23,15 @@ def find_qa_answer(
     """Return the best matching stored answer for an ATS question, if any."""
     from database.client import get_supabase_client
 
+    uid = active_user_id()
+    params: dict[str, Any] = {
+        "p_question": question,
+        "p_similarity_threshold": similarity_threshold,
+    }
+    if uid:
+        params["p_user_id"] = uid
     client = get_supabase_client()
-    result = client.rpc(
-        "find_qa_answer",
-        {
-            "p_question": question,
-            "p_similarity_threshold": similarity_threshold,
-        },
-    ).execute()
+    result = client.rpc("find_qa_answer", params).execute()
 
     rows = result.data or []
     if not rows:
@@ -58,6 +61,9 @@ def store_qa_answer(
     }
     if job_id_first_asked:
         payload["job_id_first_asked"] = job_id_first_asked
+    uid = active_user_id()
+    if uid:
+        payload["user_id"] = uid
 
     client = get_supabase_client()
     result = client.table("qa_memory").insert(payload).select("*").single().execute()
