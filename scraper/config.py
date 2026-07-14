@@ -7,7 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-load_dotenv(PROJECT_ROOT / ".env")
+load_dotenv(PROJECT_ROOT / ".env", override=True)
 
 
 def _parse_csv(value: str) -> list[str]:
@@ -29,7 +29,10 @@ class ScraperConfig:
     public_mode: bool
     eu_job_locations: tuple[str, ...]
     hu_job_locations: tuple[str, ...]
+    job_titles: tuple[str, ...]
+    relevance_keywords: tuple[str, ...]
     scholarship_keywords: tuple[str, ...]
+    scholarship_locations: tuple[str, ...]
     exclude_locations: tuple[str, ...]
 
     @staticmethod
@@ -58,13 +61,41 @@ class ScraperConfig:
             hu_job_locations=tuple(
                 _parse_csv(os.getenv("HU_JOB_LOCATIONS", "Hungary,Budapest"))
             ),
+            job_titles=tuple(
+                _parse_csv(
+                    os.getenv(
+                        "JOB_SEARCH_TITLES",
+                        "Mechatronics Engineer,Robotics Engineer,Automation Engineer,"
+                        "Graduate Mechanical Engineer,Control Systems Engineer",
+                    )
+                )
+            ),
+            relevance_keywords=tuple(
+                _parse_csv(
+                    os.getenv(
+                        "JOB_RELEVANCE_KEYWORDS",
+                        "mechatronics,robotics,automation,control,mechanical,embedded,"
+                        "firmware,manufacturing,engineer,graduate,scholarship,master,msc",
+                    )
+                )
+            ),
             scholarship_keywords=tuple(
                 _parse_csv(
                     os.getenv(
                         "SCHOLARSHIP_SEARCH_KEYWORDS",
-                        "mechatronics masters scholarship,robotics graduate scholarship,"
+                        "mechatronics masters scholarship Europe,MSc robotics scholarship,"
                         "engineering master funding Europe,Erasmus Mundus mechatronics,"
-                        "DAAD scholarship engineering",
+                        "DAAD scholarship engineering,Stipendium Hungaricum engineering,"
+                        "graduate scholarship mechanical engineering EU,master scholarship Hungary engineering,"
+                        "fully funded master robotics Europe",
+                    )
+                )
+            ),
+            scholarship_locations=tuple(
+                _parse_csv(
+                    os.getenv(
+                        "SCHOLARSHIP_SEARCH_LOCATIONS",
+                        "Hungary,European Union,Germany,Netherlands,Sweden,Austria,Denmark",
                     )
                 )
             ),
@@ -72,6 +103,30 @@ class ScraperConfig:
                 _parse_csv(os.getenv("EXCLUDE_LOCATIONS", ""))
             ),
         )
+
+    def job_search_titles(self) -> tuple[str, ...]:
+        """Primary + alternate LinkedIn search titles."""
+        titles = self.job_titles or (self.job_title,)
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for title in titles:
+            key = title.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            ordered.append(title)
+        return tuple(ordered)
+
+    def scholarship_search_locations(self) -> tuple[str, ...]:
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for location in (*self.hu_job_locations, *self.scholarship_locations):
+            key = location.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            ordered.append(location)
+        return tuple(ordered)
 
     def all_job_search_locations(self) -> tuple[str, ...]:
         """EU countries plus Hungary — deduplicated, Hungary searched first."""

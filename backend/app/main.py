@@ -36,6 +36,12 @@ from notifications.telegram_bot import (  # noqa: E402
     stop_telegram_bot,
     telegram_bot_status,
 )
+from automation.scheduler import (  # noqa: E402
+    automation_status,
+    run_automation_cycle,
+    start_automation_background,
+    stop_automation,
+)
 from scraper.canary import run_all_canaries_sync  # noqa: E402
 from scraper.config import ScraperConfig, review_before_submit  # noqa: E402
 from scraper.eu_jobs import run_eu_jobs_scraper_sync  # noqa: E402
@@ -46,12 +52,14 @@ from scraper.scholarships import run_scholarship_scraper_sync  # noqa: E402
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    # Long-polling Telegram bot needs a always-on host (local/Render), not Vercel serverless.
+    # Long-polling Telegram bot + automation need an always-on host (local/Render), not Vercel serverless.
     if not os.getenv("VERCEL"):
         start_telegram_bot_background()
+        start_automation_background()
     yield
     if not os.getenv("VERCEL"):
         stop_telegram_bot()
+        stop_automation()
 
 
 app = FastAPI(title="ProjectEagle API", lifespan=lifespan)
@@ -449,5 +457,45 @@ def run_canary():
         cfg = ScraperConfig.from_env()
         results = run_all_canaries_sync(cfg)
         return {"ok": True, "results": results}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/automation/status")
+def get_automation_status():
+    status = automation_status()
+    state = status.pop("state")
+    return {
+        "ok": True,
+        **status,
+        "state": {
+            "cycles_completed": state.cycles_completed,
+            "last_eu_scrape_at": state.last_eu_scrape_at,
+            "last_scholarship_scrape_at": state.last_scholarship_scrape_at,
+            "last_profession_scrape_at": state.last_profession_scrape_at,
+            "last_apply_at": state.last_apply_at,
+            "applications_today_count": state.applications_today_count,
+            "last_eu_message": state.last_eu_message,
+            "last_scholarship_message": state.last_scholarship_message,
+            "last_apply_message": state.last_apply_message,
+            "last_error": state.last_error,
+        },
+    }
+
+
+@app.post("/automation/run")
+def trigger_automation(
+    force_eu: bool = Query(default=False),
+    force_scholarships: bool = Query(default=False),
+    force_apply: bool = Query(default=False),
+):
+    """Run one automation cycle (respects intervals unless force_* is true)."""
+    try:
+        result = run_automation_cycle(
+            force_eu=force_eu,
+            force_scholarships=force_scholarships,
+            force_apply=force_apply,
+        )
+        return {"ok": result.get("ok", True), **result}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc

@@ -28,6 +28,8 @@ COMMAND_CATALOG: list[tuple[str, str, str, str]] = [
     ("/scan linkedin", "Run default LinkedIn job search (background).", "scraper", "scan_linkedin"),
     ("/scan profession", "Run profession.hu scraper (background).", "scraper", "scan_profession"),
     ("/canary", "Run DOM canary checks (background).", "scraper", "canary"),
+    ("/automation", "Show scrape/apply scheduler status.", "info", "automation"),
+    ("/automation run", "Force one automation cycle now (background).", "scraper", "automation_run"),
 ]
 
 AUTOMATIC_ALERTS = [
@@ -40,6 +42,7 @@ AUTOMATIC_ALERTS = [
     "LinkedIn login / verification needed",
     "Scrape complete (found / inserted counts)",
     "DOM canary OK or FAILED",
+    "Automation cycle (EU + scholarships + careful apply)",
 ]
 
 
@@ -270,6 +273,42 @@ def _cmd_canary(_text: str, chat_id: str) -> None:
     _run_background("DOM canary", lambda: run_all_canaries_sync(_scraper_cfg()), chat_id)
 
 
+def _cmd_automation(text: str, chat_id: str) -> None:
+    from automation.scheduler import automation_status
+
+    status = automation_status()
+    state = status["state"]
+    send_telegram_message(
+        "<b>ProjectEagle — Automation</b>\n"
+        f"Enabled: {status['enabled']} | Thread: {status['thread_alive']}\n"
+        f"Apply: {status['apply_enabled']} (max {status['apply_max_per_day']}/day, "
+        f"min {status['apply_min_interval_minutes']} min apart)\n"
+        f"Cycles: {state.cycles_completed}\n"
+        f"Last EU scan: {state.last_eu_scrape_at or 'never'}\n"
+        f"Last scholarships: {state.last_scholarship_scrape_at or 'never'}\n"
+        f"Last apply: {state.last_apply_at or 'never'} "
+        f"({state.applications_today_count} today)\n"
+        f"Last EU: {state.last_eu_message or '—'}\n"
+        f"Last scholarships: {state.last_scholarship_message or '—'}\n"
+        f"Last apply: {state.last_apply_message or '—'}",
+        chat_id=chat_id,
+    )
+
+
+def _cmd_automation_run(_text: str, chat_id: str) -> None:
+    from automation.scheduler import run_automation_cycle
+
+    send_telegram_message(
+        "<b>Automation cycle started</b> — EU batch, scholarships, profession.hu, apply.",
+        chat_id=chat_id,
+    )
+
+    def worker() -> dict:
+        return run_automation_cycle(force_eu=True, force_scholarships=True, force_apply=True)
+
+    _run_background("Automation cycle", worker, chat_id)
+
+
 _HANDLERS: dict[str, Handler] = {
     "list": _cmd_list,
     "ping": _cmd_ping,
@@ -284,6 +323,8 @@ _HANDLERS: dict[str, Handler] = {
     "scan_linkedin": _cmd_scan_linkedin,
     "scan_profession": _cmd_scan_profession,
     "canary": _cmd_canary,
+    "automation": _cmd_automation,
+    "automation_run": _cmd_automation_run,
 }
 
 
@@ -315,6 +356,10 @@ def _resolve_handler(text: str) -> Handler | None:
         return _HANDLERS["scan_profession"]
     if text == "/canary":
         return _HANDLERS["canary"]
+    if text == "/automation":
+        return _HANDLERS["automation"]
+    if text == "/automation run":
+        return _HANDLERS["automation_run"]
     return None
 
 
@@ -342,6 +387,7 @@ def register_bot_commands_with_telegram() -> bool:
         {"command": "answer", "description": "Save ATS question answer"},
         {"command": "scan", "description": "Subcommands: eu, scholarships, linkedin, profession"},
         {"command": "canary", "description": "Run DOM canary checks"},
+        {"command": "automation", "description": "Scrape/apply scheduler status"},
     ]
 
     result = _api("setMyCommands", {"commands": commands})

@@ -155,6 +155,15 @@ async def run_profession_scraper(cfg: ScraperConfig) -> ProfessionScrapeResult:
 
                 posted_date = date_cls.fromisoformat(posted) if posted else None
 
+                from scraper.relevance import is_relevant_listing
+
+                if not is_relevant_listing(
+                    title=listing["title"],
+                    description=description,
+                    keywords=cfg.relevance_keywords,
+                ):
+                    continue
+
                 job = JobInsert(
                     source="profession_hu",
                     title=listing["title"],

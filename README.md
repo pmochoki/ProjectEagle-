@@ -95,6 +95,7 @@ The repo includes `vercel.json` for Vercel **Services** (Next.js frontend + Fast
 API routes are proxied: `https://project-eagle-six.vercel.app/api/stats` → FastAPI backend.
 
 **Note:** Scraper/Playwright apply flows are heavy; Telegram bot + dashboard should work once deployed.
+**Automation** runs on your **local Mac** (not Vercel): EU+Hungary job rotation, scholarship scans, and careful apply (max 6/day, 45 min apart). Keep the backend running or use `scripts/run_automation.py` via cron.
 
 ## Telegram commands
 

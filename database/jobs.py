@@ -306,12 +306,43 @@ def get_stats() -> dict[str, int]:
     return stats
 
 
+def list_apply_candidates(*, limit: int = 20) -> list[JobRecord]:
+    """Jobs ready for careful auto-apply (Greenhouse/Lever, not scholarships)."""
+    jobs = list_jobs(status="new", limit=100)
+    candidates: list[JobRecord] = []
+    for job in jobs:
+        meta = job.metadata or {}
+        if meta.get("opportunity_type") == "scholarship":
+            continue
+        if job.ats_platform not in ("greenhouse", "lever"):
+            continue
+        if not job.external_url or job.is_easy_apply:
+            continue
+        candidates.append(job)
+        if len(candidates) >= limit:
+            break
+    return candidates
+
+
 def save_scraped_jobs(jobs: list[Any], *, default_source: str = "linkedin") -> int:
     """Insert scraped jobs via Supabase dedup logic. Returns count inserted."""
+    from scraper.config import ScraperConfig
+    from scraper.relevance import is_relevant_listing
+
+    cfg = ScraperConfig.from_env()
     inserted = 0
     for scraped in jobs:
-        source = _normalize_source(getattr(scraped, "source", None) or default_source)
         metadata = dict(getattr(scraped, "metadata", None) or {})
+        opportunity_type = metadata.get("opportunity_type")
+        if not is_relevant_listing(
+            title=scraped.title,
+            description=getattr(scraped, "description", "") or "",
+            keywords=cfg.relevance_keywords,
+            opportunity_type=opportunity_type,
+        ):
+            continue
+
+        source = _normalize_source(getattr(scraped, "source", None) or default_source)
         metadata.setdefault("linkedin_url", scraped.linkedin_url)
         if getattr(scraped, "source", None):
             metadata.setdefault("scrape_source", scraped.source)

@@ -9,6 +9,8 @@ import {
   fetchStats,
   fetchAiHealth,
   fetchDbHealth,
+  fetchAutomationStatus,
+  triggerAutomation,
   runScraper,
   runEuJobsScraper,
   runScholarshipScraper,
@@ -30,21 +32,33 @@ export default function Home() {
   const [professionScraping, setProfessionScraping] = useState(false);
   const [canaryRunning, setCanaryRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [automation, setAutomation] = useState<string | null>(null);
+  const [automationRunning, setAutomationRunning] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [s, j, ai, db] = await Promise.all([
+      const [s, j, ai, db, auto] = await Promise.all([
         fetchStats(),
         fetchJobs(),
         fetchAiHealth(),
         fetchDbHealth(),
+        fetchAutomationStatus().catch(() => null),
       ]);
       setStats(s);
       setJobs(j.slice(0, 20));
       setClaudeReady(ai.configured);
       setDbReady(db.ok);
+      if (auto?.enabled) {
+        const parts = [
+          auto.thread_alive ? "automation on" : "automation idle",
+          `${auto.state.applications_today_count}/${auto.apply_max_per_day} applies today`,
+        ];
+        setAutomation(parts.join(" · "));
+      } else {
+        setAutomation("automation off (local backend only)");
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load data");
     } finally {
@@ -120,6 +134,19 @@ export default function Home() {
     }
   }
 
+  async function handleAutomationRun() {
+    setAutomationRunning(true);
+    setError(null);
+    try {
+      await triggerAutomation();
+      setAutomation("Automation cycle started — check Telegram for progress");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Automation failed");
+    } finally {
+      setAutomationRunning(false);
+    }
+  }
+
   return (
     <AppShell title="Dashboard" connected={!error && !loading && dbReady}>
       <div className="mb-4 flex flex-wrap gap-2">
@@ -141,6 +168,11 @@ export default function Home() {
         >
           Claude {claudeReady ? "ready" : "add CLAUDE_API_KEY in .env"}
         </span>
+        {automation && (
+          <span className="inline-flex items-center rounded-full border border-sky-500/30 bg-sky-500/10 px-3 py-1 text-xs text-sky-300">
+            {automation}
+          </span>
+        )}
       </div>
       {error && (
         <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
@@ -154,6 +186,14 @@ export default function Home() {
         LinkedIn runs logged-in — verification prompts go to Telegram.
       </p>
       <div className="mb-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={handleAutomationRun}
+          disabled={automationRunning}
+          className="rounded-xl border border-sky-500/30 bg-sky-500/10 px-4 py-2 text-sm text-sky-200 hover:bg-sky-500/20 disabled:opacity-50"
+        >
+          {automationRunning ? "Starting automation…" : "Run automation cycle"}
+        </button>
         <button
           type="button"
           onClick={handleEuScrape}

@@ -158,3 +158,27 @@ export async function fetchAiHealth(): Promise<AiHealth> {
 export async function fetchDbHealth(): Promise<{ ok: boolean; jobs_count?: number }> {
   return apiFetch("/db/health");
 }
+
+export interface AutomationStatus {
+  enabled: boolean;
+  thread_alive: boolean;
+  apply_enabled: boolean;
+  apply_max_per_day: number;
+  poll_minutes: number;
+  state: {
+    last_eu_scrape_at: string | null;
+    last_scholarship_scrape_at: string | null;
+    applications_today_count: number;
+    last_apply_message: string;
+  };
+}
+
+export async function fetchAutomationStatus(): Promise<AutomationStatus> {
+  return apiFetch<AutomationStatus>("/automation/status");
+}
+
+export async function triggerAutomation(): Promise<void> {
+  await apiFetch("/automation/run?force_eu=true&force_scholarships=true", {
+    method: "POST",
+  });
+}

@@ -6,6 +6,8 @@ data/profile.json
 data/linkedin_session.json
 data/.telegram_offset
 data/.last_daily_summary
+data/.automation_state.json
 database/*.db
 .vercel
-.env*
+.env.local
+supabase/.temp/

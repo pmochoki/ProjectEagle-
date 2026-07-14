@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from dataclasses import asdict, dataclass
 
 from notifications.telegram import notify_scrape_complete, send_telegram_message
@@ -24,6 +25,8 @@ async def run_eu_jobs_scraper(cfg: ScraperConfig) -> EuScrapeSummary:
     cfg.validate()
 
     locations = cfg.all_job_search_locations()
+    max_titles = max(1, int(os.getenv("EU_FULL_SCAN_MAX_TITLES", "2")))
+    titles = cfg.job_search_titles()[:max_titles]
     results: list[dict] = []
     total_found = 0
     total_inserted = 0
@@ -33,21 +36,27 @@ async def run_eu_jobs_scraper(cfg: ScraperConfig) -> EuScrapeSummary:
 
     send_telegram_message(
         "<b>ProjectEagle — EU + Hungary job scan started</b>\n"
-        f"Role: {cfg.job_title}\n"
-        f"Locations: {len(locations)} (Hungary + EU)"
+        f"Titles: {len(titles)} | Locations: {len(locations)} (Hungary + EU)"
     )
 
-    for location in locations:
-        loc_cfg = cfg.with_overrides(location=location, max_pages=min(cfg.max_pages, 2))
-        result = await run_scraper(loc_cfg, source="linkedin_eu")
-        results.append(asdict(result))
-        total_found += result.found
-        total_inserted += result.inserted
-        total_skipped += result.skipped_easy_apply
-        captcha_detected = captcha_detected or result.captcha_detected
-        auth_blocked = auth_blocked or result.auth_blocked
+    for title in titles:
+        for location in locations:
+            loc_cfg = cfg.with_overrides(
+                job_title=title,
+                location=location,
+                max_pages=min(cfg.max_pages, 2),
+            )
+            result = await run_scraper(loc_cfg, source="linkedin_eu")
+            results.append(asdict(result))
+            total_found += result.found
+            total_inserted += result.inserted
+            total_skipped += result.skipped_easy_apply
+            captcha_detected = captcha_detected or result.captcha_detected
+            auth_blocked = auth_blocked or result.auth_blocked
 
-        if result.auth_blocked:
+            if result.auth_blocked:
+                break
+        if auth_blocked:
             break
 
     msg = (

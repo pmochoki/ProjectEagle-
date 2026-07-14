@@ -32,29 +32,34 @@ async def run_scholarship_scraper(cfg: ScraperConfig) -> ScholarshipScrapeSummar
 
     send_telegram_message(
         "<b>ProjectEagle — Scholarship scan started</b>\n"
-        f"Keywords: {len(cfg.scholarship_keywords)}"
+        f"Keywords: {len(cfg.scholarship_keywords)} | "
+        f"Locations: Hungary + EU"
     )
 
+    scholarship_locations = ("Hungary", "European Union")
     for keyword in cfg.scholarship_keywords:
-        kw_cfg = cfg.with_overrides(
-            job_title=keyword,
-            location="European Union",
-            max_pages=min(cfg.max_pages, 2),
-        )
-        result = await run_scraper(
-            kw_cfg,
-            require_external_apply=False,
-            source="linkedin_scholarship",
-            opportunity_type="scholarship",
-        )
-        results.append(asdict(result))
-        total_found += result.found
-        total_inserted += result.inserted
-        total_skipped += result.skipped_easy_apply
-        captcha_detected = captcha_detected or result.captcha_detected
-        auth_blocked = auth_blocked or result.auth_blocked
+        for location in scholarship_locations:
+            kw_cfg = cfg.with_overrides(
+                job_title=keyword,
+                location=location,
+                max_pages=min(cfg.max_pages, 2),
+            )
+            result = await run_scraper(
+                kw_cfg,
+                require_external_apply=False,
+                source="linkedin_scholarship",
+                opportunity_type="scholarship",
+            )
+            results.append(asdict(result))
+            total_found += result.found
+            total_inserted += result.inserted
+            total_skipped += result.skipped_easy_apply
+            captcha_detected = captcha_detected or result.captcha_detected
+            auth_blocked = auth_blocked or result.auth_blocked
 
-        if result.auth_blocked:
+            if result.auth_blocked:
+                break
+        if auth_blocked:
             break
 
     msg = f"Scholarship scan finished. {total_inserted} new listings saved."

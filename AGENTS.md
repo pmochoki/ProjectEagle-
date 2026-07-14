@@ -39,6 +39,9 @@ Repo MCP config: `.cursor/mcp.json` scoped to `project_ref=twojjtkqifmscxvrettm`
 # Health check
 cd backend && source .venv/bin/activate && PYTHONPATH=.. python ../scripts/check_setup.py
 
+# Run automation cycle (EU+HU scrape, scholarships, careful apply)
+PYTHONPATH=. python scripts/run_automation.py --force-all
+
 # Run LinkedIn scraper (needs LINKEDIN_* or SCRAPER_PUBLIC_MODE=true)
 curl -X POST http://localhost:8000/scraper/run
 
