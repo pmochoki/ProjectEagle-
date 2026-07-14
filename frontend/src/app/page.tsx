@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/components/AppShell";
+import { JobListTable } from "@/components/JobListTable";
 import { StatCard } from "@/components/StatCard";
-import { StatusBadge, type JobStatus } from "@/components/StatusBadge";
 import {
   fetchJobs,
   fetchStats,
@@ -271,7 +271,7 @@ export default function Home() {
           <div>
             <div className="text-sm font-medium text-white">Recent jobs</div>
             <div className="mt-1 text-xs text-zinc-400">
-              External-apply roles only (company website links).
+              Jobs and scholarships — click a row for summary, or use the link column.
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -284,50 +284,15 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="border-t border-white/10 bg-black/20 text-xs uppercase tracking-wide text-zinc-400">
-              <tr>
-                <th className="px-4 py-3 font-medium">Company</th>
-                <th className="px-4 py-3 font-medium">Role</th>
-                <th className="px-4 py-3 font-medium">Location</th>
-                <th className="px-4 py-3 font-medium">Scraped</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/10">
-              {loading ? (
-                <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-zinc-400">
-                    Loading…
-                  </td>
-                </tr>
-              ) : jobs.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-zinc-400">
-                    No jobs yet. Run the scraper to find external-apply roles.
-                  </td>
-                </tr>
-              ) : (
-                jobs.map((r) => (
-                  <tr key={r.id} className="hover:bg-white/5">
-                    <td className="px-4 py-3 font-medium text-white">
-                      {r.company}
-                    </td>
-                    <td className="px-4 py-3 text-zinc-200">{r.title}</td>
-                    <td className="px-4 py-3 text-zinc-300">{r.location}</td>
-                    <td className="px-4 py-3 text-zinc-400">
-                      {r.scraped_at?.slice(0, 10) ?? "—"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <StatusBadge status={r.status as JobStatus} />
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        <JobListTable
+          jobs={jobs}
+          loading={loading}
+          onJobUpdate={(jobId, patch) =>
+            setJobs((prev) =>
+              prev.map((j) => (j.id === jobId ? { ...j, ...patch } : j)),
+            )
+          }
+        />
       </div>
     </AppShell>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import {
@@ -21,6 +21,22 @@ import {
 type Filter = "all" | "jobs" | "scholarships" | "applied" | "failed";
 
 export default function JobsPage() {
+  return (
+    <Suspense
+      fallback={
+        <AppShell title="Jobs & Scholarships" connected={false}>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-8 text-center text-zinc-400">
+            Loading listings…
+          </div>
+        </AppShell>
+      }
+    >
+      <JobsPageContent />
+    </Suspense>
+  );
+}
+
+function JobsPageContent() {
   const searchParams = useSearchParams();
   const highlightJobId = searchParams.get("job");
   const [jobs, setJobs] = useState<Job[]>([]);
