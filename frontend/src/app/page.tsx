@@ -200,7 +200,7 @@ export default function Home() {
           disabled={euScraping}
           className="rounded-xl bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-black transition-opacity hover:opacity-90 disabled:opacity-50"
         >
-          {euScraping ? "Scanning EU + Hungary…" : "Scan EU + Hungary jobs"}
+          {euScraping ? "Scanning Europe…" : "Scan all Europe + Hungary jobs"}
         </button>
         <button
           type="button"

@@ -35,7 +35,7 @@ async def run_eu_jobs_scraper(cfg: ScraperConfig) -> EuScrapeSummary:
     auth_blocked = False
 
     send_telegram_message(
-        "<b>ProjectEagle — EU + Hungary job scan started</b>\n"
+        "<b>ProjectEagle — Europe job scan started</b>\n"
         f"Titles: {len(titles)} | Locations: {len(locations)} (Hungary + all Europe)"
     )
 
