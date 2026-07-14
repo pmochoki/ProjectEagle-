@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
+import os
 import sys
 
 from fastapi import FastAPI, HTTPException, Query
@@ -42,16 +43,32 @@ from scraper.scholarships import run_scholarship_scraper_sync  # noqa: E402
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    start_telegram_bot_background()
+    # Long-polling Telegram bot needs a always-on host (local/Render), not Vercel serverless.
+    if not os.getenv("VERCEL"):
+        start_telegram_bot_background()
     yield
-    stop_telegram_bot()
+    if not os.getenv("VERCEL"):
+        stop_telegram_bot()
 
 
 app = FastAPI(title="ProjectEagle API", lifespan=lifespan)
 
+@app.middleware("http")
+async def strip_api_prefix(request, call_next):
+    """Vercel rewrites /api/* to the backend service with the /api prefix intact."""
+    path = request.scope.get("path", "")
+    if path.startswith("/api"):
+        request.scope["path"] = path[4:] or "/"
+    return await call_next(request)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://project-eagle-six.vercel.app",
+    ],
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
