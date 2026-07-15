@@ -202,16 +202,55 @@ export interface JobAnalysis {
 }
 
 export async function fetchJobAnalysis(jobId: string): Promise<JobAnalysis> {
-  const data = await apiFetch<JobAnalysis & { ok: boolean }>(`/jobs/${jobId}/analyze`, {
-    method: "POST",
-  });
-  return {
+  const parse = (data: JobAnalysis & { ok: boolean }) => ({
     summary: data.summary,
     description_en: data.description_en,
     fit_probability: data.fit_probability,
     fit_rationale: data.fit_rationale,
     cached: data.cached,
-  };
+  });
+
+  try {
+    const data = await apiFetch<JobAnalysis & { ok: boolean }>(
+      `/jobs/${jobId}/analyze`,
+      { method: "POST" },
+    );
+    return parse(data);
+  } catch (analyzeErr) {
+    const msg = analyzeErr instanceof Error ? analyzeErr.message : "";
+    // Older deployments only expose POST /summary
+    if (!msg.includes("Not Found") && !msg.includes("404")) {
+      throw formatAnalysisError(analyzeErr);
+    }
+    try {
+      const data = await apiFetch<JobAnalysis & { ok: boolean }>(
+        `/jobs/${jobId}/summary`,
+        { method: "POST" },
+      );
+      return parse(data);
+    } catch (summaryErr) {
+      throw formatAnalysisError(summaryErr);
+    }
+  }
+}
+
+function formatAnalysisError(err: unknown): Error {
+  const msg = err instanceof Error ? err.message : "Analysis failed";
+  if (msg.includes("not_found_error") || msg.includes("model:")) {
+    return new Error(
+      "Claude model unavailable — update CLAUDE_MODEL on Vercel to claude-sonnet-4-6 and redeploy.",
+    );
+  }
+  if (msg.includes("Profile not found") || msg.includes("Profile missing")) {
+    return new Error("Complete your profile in Settings before generating summaries.");
+  }
+  if (msg.includes("CLAUDE_API_KEY") || msg.includes("Missing CLAUDE")) {
+    return new Error("Claude API key missing — set CLAUDE_API_KEY on the server.");
+  }
+  if (msg.includes("no description")) {
+    return new Error("This listing has no description text to summarize.");
+  }
+  return new Error(msg || "Could not load summary.");
 }
 
 export async function fetchJobSummary(jobId: string): Promise<string> {

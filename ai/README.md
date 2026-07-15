@@ -10,7 +10,7 @@ Add to `.env`:
 CLAUDE_API_KEY=sk-ant-...
 ```
 
-Optional: `CLAUDE_MODEL` (default `claude-sonnet-4-20250514`)
+Optional: `CLAUDE_MODEL` (default `claude-sonnet-4-6`)
 
 ## API
 

@@ -10,7 +10,13 @@ from dotenv import load_dotenv
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(PROJECT_ROOT / ".env")
 
-DEFAULT_MODEL = "claude-sonnet-4-20250514"
+DEFAULT_MODEL = "claude-sonnet-4-6"
+
+# Retired June 15, 2026 — remap old env values so production keeps working.
+_RETIRED_MODEL_MAP = {
+    "claude-sonnet-4-20250514": "claude-sonnet-4-6",
+    "claude-opus-4-20250514": "claude-opus-4-8",
+}
 
 
 class ClaudeConfigError(RuntimeError):
@@ -32,4 +38,5 @@ def get_claude_client() -> Anthropic:
 
 
 def get_model() -> str:
-    return os.getenv("CLAUDE_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
+    raw = os.getenv("CLAUDE_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
+    return _RETIRED_MODEL_MAP.get(raw, raw)
