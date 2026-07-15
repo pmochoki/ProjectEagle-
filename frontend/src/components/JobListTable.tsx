@@ -3,6 +3,8 @@
 import { Fragment, useState } from "react";
 import { FitProbabilityBadge } from "@/components/FitProbabilityBadge";
 import { ListingExpandedPanel } from "@/components/ListingExpandedPanel";
+import { MatchScoreBadge } from "@/components/MatchScoreBadge";
+import { SponsorshipBadge } from "@/components/SponsorshipBadge";
 import { OpportunityTypeBadge } from "@/components/ApplicationOutcomeBadge";
 import { StatusBadge, type JobStatus } from "@/components/StatusBadge";
 import { fetchJobAnalysis, type Job } from "@/lib/api";
@@ -70,7 +72,7 @@ export function JobListTable({
     await ensureAnalysis(job);
   }
 
-  const colCount = 7;
+  const colCount = 8;
 
   return (
     <div className="overflow-x-auto">
@@ -80,7 +82,8 @@ export function JobListTable({
             <th className="px-4 py-3 font-medium">Company</th>
             <th className="px-4 py-3 font-medium">Role</th>
             <th className="px-4 py-3 font-medium">Location</th>
-            <th className="px-4 py-3 font-medium">Your fit</th>
+            <th className="px-4 py-3 font-medium">Match</th>
+            <th className="px-4 py-3 font-medium">Claude fit</th>
             <th className="px-4 py-3 font-medium">Link</th>
             <th className="px-4 py-3 font-medium">Scraped</th>
             <th className="px-4 py-3 font-medium">Status</th>
@@ -122,7 +125,18 @@ export function JobListTable({
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-zinc-300">{job.location || "—"}</td>
+                    <td className="px-4 py-3 text-zinc-300">
+                      <div className="flex flex-col gap-1">
+                        <span>{job.location || "—"}</span>
+                        <SponsorshipBadge
+                          status={job.sponsorship_status}
+                          offered={job.sponsorship_offered}
+                        />
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <MatchScoreBadge value={job.match_score} compact />
+                    </td>
                     <td className="px-4 py-3">
                       <FitProbabilityBadge
                         value={job.fit_probability}
@@ -200,7 +214,7 @@ export function JobListTable({
       </table>
       {!loading && jobs.length > 0 && (
         <p className="border-t border-white/10 px-4 py-2 text-xs text-zinc-500">
-          Click a row to expand · Claude analyzes fit % and translates listing to English · Cached after first view
+          Click a row to expand · Match % uses your profile · Claude fit % runs on first expand
         </p>
       )}
     </div>

@@ -42,6 +42,11 @@ def job_to_api_dict(job: JobRecord) -> dict[str, Any]:
         "description_en": meta.get("description_en"),
         "fit_probability": meta.get("fit_probability"),
         "fit_rationale": meta.get("fit_rationale"),
+        "match_score": meta.get("match_score"),
+        "match_reasons": meta.get("match_reasons") or [],
+        "sponsorship_offered": meta.get("sponsorship_offered"),
+        "sponsorship_status": meta.get("sponsorship_status"),
+        "applicant_needs_sponsorship": meta.get("applicant_needs_sponsorship"),
         "opportunity_type": meta.get("opportunity_type", "job"),
         "linkedin_url": meta.get("linkedin_url", ""),
         "external_apply_url": job.external_url,
@@ -376,16 +381,69 @@ def list_apply_candidates(*, limit: int = 20) -> list[JobRecord]:
 
 def save_scraped_jobs(jobs: list[Any], *, default_source: str = "linkedin") -> int:
     """Insert scraped jobs via Supabase dedup logic. Returns count inserted."""
+    from dataclasses import replace
+
     from scraper.config import ScraperConfig
     from scraper.normalize import scraped_to_job_insert
+    from scraper.profile_match import enrich_listing_metadata
 
     cfg = ScraperConfig.from_env()
+    profile = None
+    try:
+        from database.profile import ProfileError, load_profile
+
+        profile = load_profile()
+    except ProfileError:
+        profile = None
+
     inserted = 0
     for scraped in jobs:
         job_insert = scraped_to_job_insert(scraped, cfg, default_source=default_source)
         if job_insert is None:
             continue
+        meta = job_insert.metadata or {}
+        opportunity_type = meta.get("opportunity_type", "job")
+        enriched = enrich_listing_metadata(
+            meta,
+            profile,
+            title=job_insert.title,
+            location=job_insert.location or "",
+            description=job_insert.description or "",
+            opportunity_type=opportunity_type,
+            ats_platform=job_insert.ats_platform or "unknown",
+            posted_date=job_insert.posted_date,
+        )
+        job_insert = replace(job_insert, metadata=enriched)
         _, outcome = insert_job_if_new(job_insert)
         if outcome == "inserted":
             inserted += 1
     return inserted
+
+
+def rescore_jobs_for_user(*, user_id: str | None = None, limit: int = 500) -> int:
+    """Recompute profile match scores for existing jobs (e.g. after profile update)."""
+    from database.profile import ProfileError, load_profile
+    from scraper.profile_match import enrich_listing_metadata
+
+    uid = user_id or active_user_id()
+    try:
+        profile = load_profile(user_id=uid)
+    except ProfileError:
+        profile = None
+
+    updated = 0
+    for job in list_jobs(limit=limit, user_id=uid):
+        meta = dict(job.metadata or {})
+        enriched = enrich_listing_metadata(
+            meta,
+            profile,
+            title=job.title,
+            location=job.location or "",
+            description=job.description or "",
+            opportunity_type=meta.get("opportunity_type", "job"),
+            ats_platform=job.ats_platform or "unknown",
+            posted_date=job.posted_date,
+        )
+        update_job_metadata(job.id, **enriched)
+        updated += 1
+    return updated

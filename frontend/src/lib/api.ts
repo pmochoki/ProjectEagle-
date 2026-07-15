@@ -34,6 +34,11 @@ export interface Job {
   description_en: string | null;
   fit_probability: number | null;
   fit_rationale: string | null;
+  match_score: number | null;
+  match_reasons: string[];
+  sponsorship_offered: boolean | null;
+  sponsorship_status: string | null;
+  applicant_needs_sponsorship?: boolean | null;
   opportunity_type: "job" | "scholarship" | string;
   linkedin_url: string;
   external_apply_url: string;

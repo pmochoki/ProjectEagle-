@@ -22,6 +22,7 @@ from database.jobs import (  # noqa: E402
     get_stats,
     job_to_api_dict,
     list_jobs,
+    rescore_jobs_for_user,
     update_job_cover_letter,
     update_job_status,
     update_job_analysis,
@@ -202,7 +203,15 @@ def update_profile(body: ProfileUpdate, user: AuthUser = Depends(require_user)):
         saved = save_profile_row(user.id, body.data)
     except ProfileError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"ok": True, "profile": saved}
+    rescored = rescore_jobs_for_user(user_id=user.id)
+    return {"ok": True, "profile": saved, "jobs_rescored": rescored}
+
+
+@app.post("/jobs/rescore")
+def rescore_jobs(user: AuthUser = Depends(require_user)):
+    """Recompute profile match scores for all jobs belonging to the signed-in user."""
+    count = rescore_jobs_for_user(user_id=user.id)
+    return {"ok": True, "jobs_rescored": count}
 
 
 @app.get("/ai/health")

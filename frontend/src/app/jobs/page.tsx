@@ -4,6 +4,8 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { FitProbabilityBadge } from "@/components/FitProbabilityBadge";
+import { MatchScoreBadge } from "@/components/MatchScoreBadge";
+import { SponsorshipBadge } from "@/components/SponsorshipBadge";
 import { ListingExpandedPanel } from "@/components/ListingExpandedPanel";
 import {
   ApplicationOutcomeBadge,
@@ -269,8 +271,15 @@ function JobsPageContent() {
                     <div className="text-sm text-zinc-300">
                       {job.company} · {job.location}
                     </div>
+                    <div className="mt-1">
+                      <SponsorshipBadge
+                        status={job.sponsorship_status}
+                        offered={job.sponsorship_offered}
+                      />
+                    </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
+                    <MatchScoreBadge value={job.match_score} compact />
                     <FitProbabilityBadge
                       value={job.fit_probability}
                       loading={summaryLoadingId === job.id}

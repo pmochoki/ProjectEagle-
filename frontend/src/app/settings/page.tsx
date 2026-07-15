@@ -35,7 +35,7 @@ export default function SettingsPage() {
     try {
       const parsed = JSON.parse(profileJson) as Record<string, unknown>;
       await saveProfile(parsed);
-      setMessage("Profile saved — cover letters and auto-apply will use this data.");
+      setMessage("Profile saved — match scores updated for your jobs. Cover letters use this data too.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed — check JSON is valid");
     } finally {

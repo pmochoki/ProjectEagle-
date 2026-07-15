@@ -48,5 +48,9 @@
       "end_date": "2020"
     }
   ],
+  "preferences": {
+    "needs_visa_sponsorship": true,
+    "preferred_locations": ["Hungary", "Germany", "Netherlands", "Austria"]
+  },
   "qa_memory": []
 }

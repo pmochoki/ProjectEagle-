@@ -1,6 +1,8 @@
 "use client";
 
 import { FitProbabilityBadge } from "@/components/FitProbabilityBadge";
+import { MatchScoreBadge } from "@/components/MatchScoreBadge";
+import { SponsorshipBadge } from "@/components/SponsorshipBadge";
 import { listingPreview } from "@/lib/listingText";
 import type { Job } from "@/lib/api";
 
@@ -17,16 +19,46 @@ export function ListingExpandedPanel({
 
   return (
     <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-      <div className="mb-4 flex flex-wrap items-center gap-3">
+      <div className="mb-4 flex flex-wrap items-start gap-4">
         <div>
-          <div className="text-xs uppercase tracking-wide text-zinc-500">Your fit (Claude)</div>
+          <div className="text-xs uppercase tracking-wide text-zinc-500">Profile match</div>
+          <div className="mt-1">
+            <MatchScoreBadge value={job.match_score} />
+          </div>
+          {job.match_reasons && job.match_reasons.length > 0 && (
+            <ul className="mt-2 max-w-md space-y-1 text-xs text-zinc-400">
+              {job.match_reasons.map((reason) => (
+                <li key={reason}>• {reason}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div>
+          <div className="text-xs uppercase tracking-wide text-zinc-500">Claude fit</div>
           <div className="mt-1">
             <FitProbabilityBadge value={job.fit_probability} loading={loading} />
           </div>
+          {job.fit_rationale && (
+            <p className="mt-2 max-w-md text-sm text-zinc-300">{job.fit_rationale}</p>
+          )}
         </div>
-        {job.fit_rationale && (
-          <p className="min-w-[12rem] flex-1 text-sm text-zinc-300">{job.fit_rationale}</p>
-        )}
+        <div>
+          <div className="text-xs uppercase tracking-wide text-zinc-500">Sponsorship</div>
+          <div className="mt-1">
+            <SponsorshipBadge
+              status={job.sponsorship_status}
+              offered={job.sponsorship_offered}
+            />
+            {!job.sponsorship_status && (
+              <span className="text-xs text-zinc-500">Not mentioned in listing</span>
+            )}
+            {job.applicant_needs_sponsorship && job.sponsorship_offered === false && (
+              <p className="mt-1 text-xs text-rose-300">
+                Your profile indicates you need visa sponsorship.
+              </p>
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">

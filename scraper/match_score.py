@@ -2,84 +2,38 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
-
-from scraper.hungary_focus import hungary_match_boost, is_hungary_location
-
-from database.models import JobRecord, detect_ats_platform
-
-_HIGH = (
-    "mechatronics",
-    "robotics",
-    "automation",
-    "control systems",
-    "embedded",
-    "mechanical engineer",
-)
-_MED = ("manufacturing", "firmware", "graduate", "engineer", "intern")
-_SCHOLARSHIP = (
-    "scholarship",
-    "master",
-    "masters",
-    "msc",
-    "stipend",
-    "funding",
-    "erasmus",
-    "daad",
-    "stipendium",
-)
+from database.models import JobRecord
 
 
-def compute_match_score(job: JobRecord) -> int:
+def compute_match_score(job: JobRecord, profile: dict | None = None) -> int:
+    """Use cached profile match score when present, else compute on the fly."""
     meta = job.metadata or {}
-    title = (job.title or "").lower()
-    desc = (job.description or "").lower()
-    text = f"{title}\n{desc}"
-    score = 0
+    cached = meta.get("match_score")
+    if cached is not None:
+        try:
+            return max(0, min(100, int(cached)))
+        except (TypeError, ValueError):
+            pass
 
-    if meta.get("opportunity_type") == "scholarship":
-        score += 40
-        for kw in _SCHOLARSHIP:
-            if kw in text:
-                score += 8
-    else:
-        for kw in _HIGH:
-            if kw in text:
-                score += 12
-        for kw in _MED:
-            if kw in text:
-                score += 5
+    from scraper.profile_match import compute_profile_match
 
-    platform = job.ats_platform or detect_ats_platform(job.external_url or "")
-    if platform in ("greenhouse", "lever"):
-        score += 20
-    elif platform in ("workday", "smartrecruiters"):
-        score += 8
+    if profile is None:
+        try:
+            from database.profile import ProfileError, load_profile
 
-    loc = (job.location or "").lower()
-    if is_hungary_location(loc):
-        score += 25
-    elif any(x in loc for x in ("europe", "eu", "germany", "netherlands", "austria")):
-        score += 10
+            profile = load_profile()
+        except ProfileError:
+            profile = None
 
-    score += hungary_match_boost(job)
-
-    posted = job.posted_date
-    if posted:
-        age = (date.today() - posted).days
-        if age <= 3:
-            score += 15
-        elif age <= 7:
-            score += 10
-        elif age <= 14:
-            score += 5
-
-    found = job.date_found
-    if found:
-        if found.tzinfo is None:
-            found = found.replace(tzinfo=timezone.utc)
-        hours = (datetime.now(timezone.utc) - found).total_seconds() / 3600
-        if hours <= 48:
-            score += 5
-
-    return min(100, score)
+    opportunity_type = meta.get("opportunity_type", "job")
+    score, _, _ = compute_profile_match(
+        profile,
+        title=job.title or "",
+        location=job.location or "",
+        description=job.description or "",
+        opportunity_type=opportunity_type,
+        ats_platform=job.ats_platform or "unknown",
+        posted_date=job.posted_date,
+        date_found=job.date_found,
+    )
+    return score
