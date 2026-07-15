@@ -345,18 +345,42 @@ def _cmd_linkedin_status(_text: str, chat_id: str) -> None:
     from scraper.linkedin_auth import clear_linkedin_auth_block, probe_linkedin_session_sync
 
     cfg = _scraper_cfg()
-    probe = probe_linkedin_session_sync(cfg)
     state = AutomationState.load()
+    if getattr(state, "linkedin_account_restricted", False) and not cfg.public_mode:
+        send_telegram_message(
+            "<b>ProjectEagle — LinkedIn session</b>\n"
+            "Status: Account restricted\n"
+            "Logged-in scraping is stopped.\n"
+            "Appeal via LinkedIn Help, set <code>SCRAPER_PUBLIC_MODE=true</code> "
+            "(or <code>LINKEDIN_ENABLED=false</code>), clear credentials from secrets, "
+            "then after LinkedIn restores access run this command again to clear the flag.",
+            chat_id=chat_id,
+        )
+        return
+
+    probe = probe_linkedin_session_sync(cfg)
     lines = [
         "<b>ProjectEagle — LinkedIn session</b>",
         f"Status: {'OK' if probe.get('ok') else 'Needs action'}",
         f"Detail: {probe.get('detail', 'unknown')}",
         f"Saved session: {probe.get('session_saved', False)}",
     ]
-    if probe.get("ok"):
+    if probe.get("reason") == "account_restricted":
+        from scraper.linkedin_auth import record_linkedin_account_restricted
+
+        record_linkedin_account_restricted(state)
+        state.save()
+        lines.append(
+            "Restriction recorded — stop credential scrape; use public mode / alt sources."
+        )
+    elif probe.get("ok") and not probe.get("public_mode"):
         clear_linkedin_auth_block(state)
         state.save()
         lines.append("Auth cooldown cleared — automation can retry LinkedIn.")
+    elif probe.get("ok") and probe.get("public_mode"):
+        lines.append(
+            "Guest mode OK. Restriction flag kept until a logged-in session probe succeeds."
+        )
     elif probe.get("reason") in ("captcha", "verification_required"):
         lines.append("Complete verification on your phone, then run this command again.")
     send_telegram_message("\n".join(lines), chat_id=chat_id)

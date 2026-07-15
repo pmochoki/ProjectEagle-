@@ -39,6 +39,8 @@ class AutomationState:
     cycles_completed: int = 0
     linkedin_auth_failures: int = 0
     linkedin_auth_blocked_until: str | None = None
+    # Permanent until cleared via /linkedin_status after LinkedIn unlocks the account.
+    linkedin_account_restricted: bool = False
     linkedin_searches_today_date: str | None = None
     linkedin_searches_today_count: int = 0
     linkedin_searches_cycle_count: int = 0

@@ -30,6 +30,11 @@ def linkedin_auth_backoff_max() -> float:
     return float(os.getenv("LINKEDIN_AUTH_BACKOFF_MAX_SECONDS", "3600"))
 
 
+def linkedin_enabled() -> bool:
+    """Hard kill switch — set LINKEDIN_ENABLED=false after an account restriction."""
+    return os.getenv("LINKEDIN_ENABLED", "true").lower() not in ("0", "false", "no")
+
+
 def canary_before_scrape() -> bool:
     return os.getenv("CANARY_BEFORE_SCRAPE", "false").lower() in ("1", "true", "yes")
 
@@ -39,6 +44,8 @@ def canary_use_session() -> bool:
 
 
 def is_linkedin_auth_blocked(state: "AutomationState") -> bool:
+    if getattr(state, "linkedin_account_restricted", False):
+        return True
     until = state.linkedin_auth_blocked_until
     if not until:
         return False
@@ -52,6 +59,13 @@ def is_linkedin_auth_blocked(state: "AutomationState") -> bool:
 
 
 def linkedin_auth_blocked_message(state: "AutomationState") -> str:
+    if getattr(state, "linkedin_account_restricted", False):
+        return (
+            "LinkedIn account is restricted — logged-in scraping stopped. "
+            "Appeal via LinkedIn Help, remove LINKEDIN_EMAIL/PASSWORD from secrets, "
+            "set SCRAPER_PUBLIC_MODE=true (or LINKEDIN_ENABLED=false), and use EURES/"
+            "Indeed/Arbeitnow. After unlock, send /linkedin_status."
+        )
     until = state.linkedin_auth_blocked_until or "unknown"
     failures = state.linkedin_auth_failures
     return (
@@ -61,6 +75,9 @@ def linkedin_auth_blocked_message(state: "AutomationState") -> str:
 
 
 def record_linkedin_auth_failure(state: "AutomationState", reason: str) -> None:
+    if reason == "account_restricted":
+        record_linkedin_account_restricted(state)
+        return
     state.linkedin_auth_failures += 1
     delay = backoff_seconds(
         state.linkedin_auth_failures,
@@ -74,9 +91,22 @@ def record_linkedin_auth_failure(state: "AutomationState", reason: str) -> None:
     state.last_error = f"LinkedIn auth blocked ({reason}); cooldown {int(delay)}s"
 
 
+def record_linkedin_account_restricted(state: "AutomationState") -> None:
+    """Hard-stop logged-in LinkedIn until the user clears the flag after unlock."""
+    state.linkedin_account_restricted = True
+    state.linkedin_auth_failures += 1
+    # Far-future cooldown so older callers that only check blocked_until also pause.
+    far = datetime.now(timezone.utc).timestamp() + 60 * 60 * 24 * 30
+    state.linkedin_auth_blocked_until = datetime.fromtimestamp(far, tz=timezone.utc).isoformat()
+    state.last_error = (
+        "LinkedIn account restricted — stop credential scrape; use public/alt sources"
+    )
+
+
 def clear_linkedin_auth_block(state: "AutomationState") -> None:
     state.linkedin_auth_failures = 0
     state.linkedin_auth_blocked_until = None
+    state.linkedin_account_restricted = False
 
 
 def _linkedin_searches_today(state: "AutomationState") -> int:
@@ -87,7 +117,17 @@ def _linkedin_searches_today(state: "AutomationState") -> int:
 
 
 def linkedin_scrape_allowed(state: "AutomationState", auto_cfg: "AutomationConfig") -> tuple[bool, str]:
-    if is_linkedin_auth_blocked(state):
+    if not linkedin_enabled():
+        return False, (
+            "LinkedIn disabled (LINKEDIN_ENABLED=false). "
+            "EURES / Indeed / Arbeitnow / RemoteOK continue as usual."
+        )
+    public_mode = os.getenv("SCRAPER_PUBLIC_MODE", "true").lower() == "true"
+    if getattr(state, "linkedin_account_restricted", False):
+        if not public_mode:
+            return False, linkedin_auth_blocked_message(state)
+        # Guest search does not use the restricted account credentials.
+    elif is_linkedin_auth_blocked(state):
         return False, linkedin_auth_blocked_message(state)
     if _linkedin_searches_today(state) >= auto_cfg.linkedin_daily_search_cap:
         return False, (
@@ -123,7 +163,7 @@ async def probe_linkedin_session(cfg: "ScraperConfig") -> dict:
     """Check whether saved LinkedIn session can reach feed/jobs without login form."""
     from playwright.async_api import async_playwright
 
-    from scraper.linkedin_page import detect_captcha, session_looks_authenticated
+    from scraper.linkedin_page import detect_account_restricted, detect_captcha, session_looks_authenticated
     from scraper.session import load_session_context, session_exists
 
     if cfg.public_mode:
@@ -151,6 +191,13 @@ async def probe_linkedin_session(cfg: "ScraperConfig") -> dict:
         try:
             await page.goto("https://www.linkedin.com/feed/", wait_until="domcontentloaded", timeout=30000)
             await page.wait_for_timeout(1500)
+            if await detect_account_restricted(page):
+                return {
+                    "ok": False,
+                    "detail": "LinkedIn account is restricted — appeal via Help; do not retry login",
+                    "session_saved": True,
+                    "reason": "account_restricted",
+                }
             if await detect_captcha(page):
                 return {
                     "ok": False,

@@ -65,7 +65,7 @@ class ScraperConfig:
             delay_min_seconds=int(os.getenv("SCRAPER_DELAY_MIN", "3")),
             delay_max_seconds=int(os.getenv("SCRAPER_DELAY_MAX", "15")),
             headless=os.getenv("SCRAPER_HEADLESS", "true").lower() == "true",
-            public_mode=os.getenv("SCRAPER_PUBLIC_MODE", "false").lower() == "true",
+            public_mode=os.getenv("SCRAPER_PUBLIC_MODE", "true").lower() == "true",
             eu_job_locations=_job_locations_from_env(),
             hu_job_locations=tuple(
                 _parse_csv(os.getenv("HU_JOB_LOCATIONS", "Hungary,Budapest"))

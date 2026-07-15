@@ -172,6 +172,19 @@ def notify_linkedin_auth_issue(
             "\n3. Wait 2–3 minutes, then tap <b>Run scraper</b> again in the dashboard"
             "\n\nNo coding required — the saved session will resume after you verify."
         )
+    elif reason == "account_restricted":
+        body = (
+            "LinkedIn has <b>restricted this account</b> (automation risk)."
+            "\n\n<b>Do this now:</b>"
+            "\n1. Stop all LinkedIn logins from ProjectEagle — do not retry scrape-login"
+            "\n2. Change the LinkedIn password (and email password if it was reused)"
+            "\n3. Clear <code>LINKEDIN_EMAIL</code> / <code>LINKEDIN_PASSWORD</code> from Cursor Cloud Secrets / <code>.env</code>"
+            "\n4. Set <code>SCRAPER_PUBLIC_MODE=true</code> (guest LinkedIn) or <code>LINKEDIN_ENABLED=false</code>"
+            "\n5. Keep EURES / Indeed / Arbeitnow / RemoteOK running for job discovery"
+            "\n6. On your phone: LinkedIn Help → appeal / request review for restricted account"
+            "\n\nLogged-in scraping stays off until you unlock the account and send "
+            "<code>/linkedin_status</code>."
+        )
     elif reason == "verification_required":
         body = (
             "LinkedIn wants extra verification (checkpoint)."

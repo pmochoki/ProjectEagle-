@@ -37,6 +37,11 @@ curl -X POST http://localhost:8000/scraper/run
 
 ## Notes
 
+- Prefer `SCRAPER_PUBLIC_MODE=true` (default). Logged-in LinkedIn scraping can get the
+  account restricted; if that happens set `LINKEDIN_ENABLED=false`, clear credentials,
+  and rely on EURES / Indeed / Arbeitnow / RemoteOK while you appeal via LinkedIn Help.
 - LinkedIn frequently changes selectors; this module is structured for iterative hardening.
 - If CAPTCHA is detected, the run exits with `captcha_detected=true` so notifications/pausing can be handled in later modules.
+- If the account-restricted banner is detected, credential login stops permanently until
+  `/linkedin_status` clears the flag after a successful logged-in probe.
 

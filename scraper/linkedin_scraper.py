@@ -17,7 +17,11 @@ from notifications.telegram import (
     notify_scrape_complete,
 )
 from scraper.config import ScraperConfig
-from scraper.linkedin_page import detect_captcha, session_looks_authenticated
+from scraper.linkedin_page import (
+    detect_account_restricted,
+    detect_captcha,
+    session_looks_authenticated,
+)
 from scraper.models import ScrapedJob
 from scraper.session import clear_session, load_session_context, save_session
 
@@ -45,6 +49,9 @@ async def _human_delay(cfg: ScraperConfig, *, failure_multiplier: int = 0) -> No
 
 async def _detect_captcha(page) -> bool:
     return await detect_captcha(page)
+
+
+def _date_posted_filter(code: str) -> str:
     mapping = {
         "past_24_hours": "r86400",
         "past_week": "r604800",
@@ -82,7 +89,7 @@ def _build_search_url(cfg: ScraperConfig) -> str:
     return "".join(parts)
 
 
-def _date_posted_filter(code: str) -> str:
+def _parse_relative_posted(text: str) -> date | None:
     t = text.lower()
     today = date.today()
     if "just now" in t or "today" in t:
@@ -240,6 +247,10 @@ async def _login_if_needed(page, cfg: ScraperConfig, *, failures: int = 0) -> tu
     await page.goto("https://www.linkedin.com/feed/", wait_until="domcontentloaded")
     await _human_delay(cfg, failure_multiplier=failures)
 
+    if await detect_account_restricted(page):
+        clear_session()
+        return False, "account_restricted"
+
     if await _detect_captcha(page):
         return False, "captcha"
 
@@ -248,6 +259,11 @@ async def _login_if_needed(page, cfg: ScraperConfig, *, failures: int = 0) -> tu
 
     await page.goto("https://www.linkedin.com/login", wait_until="domcontentloaded")
     await _human_delay(cfg, failure_multiplier=failures)
+
+    # Restriction banner often appears on the login screen — do not submit credentials.
+    if await detect_account_restricted(page):
+        clear_session()
+        return False, "account_restricted"
 
     if await session_looks_authenticated(page):
         return True, ""
@@ -268,10 +284,17 @@ async def _login_if_needed(page, cfg: ScraperConfig, *, failures: int = 0) -> tu
     await page.wait_for_load_state("domcontentloaded")
     await _human_delay(cfg, failure_multiplier=failures)
 
+    if await detect_account_restricted(page):
+        clear_session()
+        return False, "account_restricted"
+
     if await _detect_captcha(page):
         return False, "captcha"
 
     if await page.locator("#username").count() > 0:
+        if await detect_account_restricted(page):
+            clear_session()
+            return False, "account_restricted"
         error_loc = page.locator("#error-for-password, .form__label--error, [data-test-id='login-error']")
         if await error_loc.count() > 0:
             clear_session()
@@ -297,6 +320,28 @@ async def run_scraper(
     from scraper.linkedin_auth import clear_linkedin_auth_block, record_linkedin_auth_failure
 
     state = AutomationState.load()
+    if getattr(state, "linkedin_account_restricted", False) and not cfg.public_mode:
+        notify_linkedin_auth_issue(
+            reason="account_restricted",
+            search_title=cfg.job_title,
+            search_location=cfg.location,
+        )
+        return ScrapeResult(
+            found=0,
+            inserted=0,
+            skipped_easy_apply=0,
+            captcha_detected=False,
+            pages_visited=0,
+            message=(
+                "LinkedIn account restricted — logged-in scrape stopped. "
+                "Set SCRAPER_PUBLIC_MODE=true or LINKEDIN_ENABLED=false."
+            ),
+            public_mode=False,
+            auth_blocked=True,
+            search_location=cfg.location,
+            search_title=cfg.job_title,
+        )
+
     failures = state.linkedin_auth_failures
 
     found_jobs: list[ScrapedJob] = []
