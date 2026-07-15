@@ -514,16 +514,17 @@ def list_jobs_pending_review(*, limit: int = 10, user_id: str | None = None) -> 
 
 
 def list_apply_candidates(*, limit: int = 20) -> list[JobRecord]:
-    """Jobs ready for careful auto-apply (Greenhouse/Lever, not scholarships), best match first."""
+    """Jobs ready for careful auto-apply (supported ATS), best match first."""
     from scraper.match_score import compute_match_score
 
     jobs = list_jobs(status="new", limit=100)
     candidates: list[JobRecord] = []
+    supported = ("greenhouse", "lever", "workday", "smartrecruiters")
     for job in jobs:
         meta = job.metadata or {}
         if meta.get("opportunity_type") == "scholarship":
             continue
-        if job.ats_platform not in ("greenhouse", "lever"):
+        if job.ats_platform not in supported:
             continue
         if not job.external_url or job.is_easy_apply:
             continue
