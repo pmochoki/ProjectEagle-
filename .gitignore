@@ -4,6 +4,8 @@ __pycache__/
 .env
 data/profile.json
 data/linkedin_session.json
+data/site_accounts.json
+data/site_sessions/
 data/.telegram_offset
 data/.last_daily_summary
 data/.automation_state.json

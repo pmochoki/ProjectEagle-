@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import asdict
-from pathlib import Path
 from typing import Any
 
 from playwright.async_api import async_playwright
 
 from ai.tailor import tailor_for_job
+from ats.accounts import host_for_url, load_site_context, save_site_session
 from ats.base import ApplyResult
-from ats.greenhouse import apply_greenhouse, write_temp_text
+from ats.forms import write_temp_text
+from ats.greenhouse import apply_greenhouse
 from ats.lever import apply_lever
+from ats.smartrecruiters import apply_smartrecruiters
+from ats.workday import apply_workday
 from database.jobs import (
     get_job,
     job_to_api_dict,
@@ -20,6 +23,9 @@ from database.jobs import (
 )
 from database.profile import load_profile
 from scraper.config import ScraperConfig, review_before_submit
+
+
+SUPPORTED_APPLY_PLATFORMS = ("greenhouse", "lever", "workday", "smartrecruiters")
 
 
 async def _apply_job_async(job_id: str, *, force_submit: bool = False) -> ApplyResult:
@@ -59,35 +65,39 @@ async def _apply_job_async(job_id: str, *, force_submit: bool = False) -> ApplyR
     cfg = ScraperConfig.from_env()
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=cfg.headless, slow_mo=75)
-        page = await browser.new_page()
+        context = await load_site_context(browser, job_rec.external_url, headless=cfg.headless)
+        page = await context.new_page()
         try:
             platform = job_rec.ats_platform
+            common = dict(
+                job_id=job_id,
+                profile=profile,
+                job=job_payload,
+                cover_letter=cover_letter,
+                resume_path=resume_path,
+                review_before_submit=review,
+            )
             if platform == "greenhouse":
-                result = await apply_greenhouse(
-                    page,
-                    job_id=job_id,
-                    profile=profile,
-                    job=job_payload,
-                    cover_letter=cover_letter,
-                    resume_path=resume_path,
-                    review_before_submit=review,
-                )
+                result = await apply_greenhouse(page, **common)
             elif platform == "lever":
-                result = await apply_lever(
-                    page,
-                    job_id=job_id,
-                    profile=profile,
-                    job=job_payload,
-                    cover_letter=cover_letter,
-                    resume_path=resume_path,
-                    review_before_submit=review,
-                )
+                result = await apply_lever(page, **common)
+            elif platform == "workday":
+                result = await apply_workday(page, context=context, **common)
+            elif platform == "smartrecruiters":
+                result = await apply_smartrecruiters(page, context=context, **common)
             else:
                 update_job_failure(job_id, f"Unsupported ATS platform: {platform}")
                 result = ApplyResult(
                     outcome="failed",
                     message=f"No filler for ATS platform: {platform}",
                 )
+
+            # Persist session after successful auth/fill paths
+            if result.outcome in ("applied", "review_pending", "needs_verification"):
+                try:
+                    await save_site_session(context, host_for_url(job_rec.external_url))
+                except Exception:
+                    pass
         except Exception as exc:
             update_job_failure(job_id, str(exc))
             result = ApplyResult(outcome="failed", message=str(exc))

@@ -326,6 +326,44 @@ def notify_captcha_manual(*, job_id: str, job_title: str, url: str) -> None:
     )
 
 
+def notify_needs_account(
+    *,
+    job_id: str,
+    job_title: str,
+    company: str,
+    url: str,
+    detail: str = "",
+) -> None:
+    send_telegram_message(
+        "<b>ProjectEagle — Employer account needed</b>\n"
+        f"<b>{job_title}</b> @ {company}\n"
+        f"{detail or 'Could not auto-register / sign in.'}\n\n"
+        "Open the link, create or verify the account, then retry apply "
+        "(session will be saved for next time):\n"
+        f"{url}\n"
+        f"Job: <code>{job_id}</code>"
+    )
+
+
+def notify_needs_verification(
+    *,
+    job_id: str,
+    job_title: str,
+    company: str,
+    url: str,
+    detail: str = "",
+) -> None:
+    send_telegram_message(
+        "<b>ProjectEagle — Verify employer email</b>\n"
+        f"<b>{job_title}</b> @ {company}\n"
+        f"{detail or 'Check your inbox and confirm the account.'}\n\n"
+        "After you verify, reply or retry apply from the dashboard — "
+        "we keep the saved site session.\n"
+        f"{url}\n"
+        f"Job: <code>{job_id}</code>"
+    )
+
+
 def send_command_list(*, chat_id: str | None = None) -> None:
     from notifications.telegram_commands import AUTOMATIC_ALERTS, COMMAND_CATALOG
 

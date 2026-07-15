@@ -6,6 +6,8 @@ from typing import Literal
 ApplyOutcome = Literal[
     "applied",
     "needs_answer",
+    "needs_account",
+    "needs_verification",
     "review_pending",
     "failed",
     "captcha",

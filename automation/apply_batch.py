@@ -50,7 +50,7 @@ def maybe_apply_one(cfg: AutomationConfig, state: AutomationState) -> str:
     candidates = list_apply_candidates(limit=20)
     if not candidates:
         state.last_apply_message = (
-            "No eligible jobs to apply (need status=new, Greenhouse/Lever, external apply)"
+            "No eligible jobs to apply (need status=new, supported ATS, external apply)"
         )
         return state.last_apply_message
 
